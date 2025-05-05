@@ -26,11 +26,11 @@ Some additional info and functions for the analysis
 #include "TParticlePDG.h"
 #include "TDatime.h"
 
-#include </gpfs01/star/pwg/svomich/Jets/Embedding_pico/fastjet1/fastjet_install/include/fastjet/config.h>
-#include </gpfs01/star/pwg/svomich/Jets/Embedding_pico/fastjet1/fastjet_install/include/fastjet/PseudoJet.hh>
-#include </gpfs01/star/pwg/svomich/Jets/Embedding_pico/fastjet1/fastjet_install/include/fastjet/JetDefinition.hh>
-#include </gpfs01/star/pwg/svomich/Jets/Embedding_pico/fastjet1/fastjet_install/include/fastjet/ClusterSequence.hh>
-#include </gpfs01/star/pwg/svomich/Jets/Embedding_pico/fastjet1/fastjet_install/include/fastjet/ClusterSequenceArea.hh>
+#include "fastjet/config.h"
+#include "fastjet/PseudoJet.hh"
+#include "fastjet/JetDefinition.hh"
+#include "fastjet/ClusterSequence.hh"
+#include "fastjet/ClusterSequenceArea.hh"
 
 
 #include <vector>
@@ -167,16 +167,39 @@ const int BadTowerArr[822]={31, 34, 35, 38, 95, 96, 106, 113, 114, 134, 139, 157
 
 
 
+//vector<float> TowArr;
+//vector<float> Ecorr;
+//vector<float> TowEta;
+//vector<float> TowPhi;
+
 //tower based
+//array<int, 4800> Nmatch;
+//array<float, 4800> SumpT;
 array<float, 4800> Sump;
+//array<float, 4800> E1;
+//array<float, 4800> E2;
+
+//cluster based
+//array<int, 1200> Nmatch;
+//array<float, 1200> SumpT;
+//array<float, 1200> Sump;
+//array<float, 1200> EneCl;
+
+//vector<vector<int> > Clusters; //dont forget to clear it in the source code
+//array<int, 4800> Nmatched = {0};
+//array<double, 4800> SumpCl = {0};
+//vector<float> EnergyCl;
 
 vector<int> Triggers;
 
 int nBadTowers = sizeof(BadTowerArr)/sizeof(BadTowerArr[0]);
 
+
+
 int indexarr[1200][4] = {0};
 
 TPythia6 *fpythia;
+
 
 /*class JetInfo : public PseudoJet::UserInfoBase {
 public:
@@ -531,6 +554,7 @@ Bool_t findNeighborTowers(StPicoDst* mPicoDst, StEmcGeom *mEmcGeom, TVector3 *po
 }   
 
 
+
 //----------------------------------------------------------------------------- 
 //Find energy and position of a cluster surrounding track-matched tower 
 //----------------------------------------------------------------------------- 
@@ -579,6 +603,9 @@ Bool_t findRealCluster(StPicoDst *mPicoDst, StEmcGeom *mEmcGeom, TVector3 *posit
  				if (ieta == 0 && iphi == 0) {
           mEmcGeom->getEta(nextTowerId, etaTemp);
           mEmcGeom->getPhi(nextTowerId, phiTemp);
+          //ene[2] = emcHit->energy();
+          //d[2] = position.pseudoRapidity() - etaTemp;
+          //d[3] = position.phi() - phiTemp;
         }
         else {
           energyTemp = emcHit->energy();
@@ -595,6 +622,8 @@ Bool_t findRealCluster(StPicoDst *mPicoDst, StEmcGeom *mEmcGeom, TVector3 *posit
             dist1 = distTemp;
             energy2 = energy1;
             energy1 = energyTemp;
+            //localId2 = localId1;
+            //localId1 = localTowerId;
           }
           else if (distTemp < dist2) {
             dist2 = distTemp;
@@ -698,4 +727,190 @@ bool doesExistInMultiple(const vector< vector<int> >&  Clusters, int item, vecto
 				//cout << endl;
     }
     return found;
+}
+
+//----------------------------------------------------------------------------- 
+//Match track to BEMC cluster - maybe impossible from PicoDst - missing StEmcCollection
+//----------------------------------------------------------------------------- 
+
+/*StEmcCluster* StWiciED0PicoDstMaker::GetMatchingCluster(StPicoDst *mPicoDst, TVector3 *position, const StEmcGeom* geom, StEmcDetector* detector,
+                                                        Double_t& selDist, Double_t& selDistPhi, Double_t& selDistZ, Int_t& nMatchCls) {
+  //  Matches track and looks for the cluster that contanis the selected tower
+  //  input:
+  //   	position      - position of track after projection
+  //    geom          - geometry of the detector
+  //    detector      - detector object itself
+  //  output:
+  //    selDist       - distance between the track and the closest cluster on the detector surface
+  //    selDistPhi    - distance in                         *etacluster = sum/energy;
+                }
+Phi plane between the track and the closest cluster on the detector surface
+  //    selDistZ      - distance in Z direction between the track and the closest cluster on the detector surface
+  //    nMatchCls     - number of clusters that have the tower which track matches to
+  //  return:
+  //    StEmcCluster* - Pointer to the closest StEmcCluster, but only if the projection went well and
+  //                    the cluster with a tower that track matches to was found, otherwise NULL
+  //StThreeVectorD        position, momentum;
+  
+  //projecting track to the surface of the given subdetector
+  if(fEmcPosition->projTrack(&position, &momentum, track, fMagField, geom->Radius())==kFALSE) {
+    cerr << "------> StWiciED0PicoDstMaker::GetMatchingCluster: Cannot project the track! ABORTING!!!" << endl;
+    return NULL; //projection failed, aborting
+  }
+  TVector3 trkOnDet(position.x(), position.y(), position.z()); //conversion from STAR to ROOT format
+  
+  
+  StEmcCluster* selCluster = NULL;
+  TVector3 clusterPosition;
+  Double_t     dist = 9999,    distPhi = 9999,    distZ = 9999;
+  Double_t  minDist = 9999, minDistPhi = 9999, minDistZ = 9999;
+  Int_t towMod = -1, towEta = -1, towSub = -1, towID = -1;
+  //Int_t hitMod = -1, hitEta = -1, hitSub = -1;
+  //Float_t phi, eta;
+  
+  Int_t assCl =  0;
+  
+  
+  //finding a tower that track matches to (yup, tower, no matter what detector is in use here)
+  if(geom->getBin(position->phi(), position->pseudoRapidity(), towMod, towEta, towSub) || towSub==-1) {
+    //getBin returns 0 if eta is in the range of BEMC, 1 otherwise, an aditional test for sub is require though
+    //cerr << "------> StWiciED0PicoDstMaker::GetMatchingCluster: Track out of BEMC! ABORTING!!!" << endl;
+    return NULL; //when out of BEMC -> we don't want it!
+  }
+
+	StEmcCollection col* = new StEmcCollection();
+  if(detector->detectorId()==kBarrelEmcTowerId) { //only when searching for tower cluster
+    if(fBtowGeom->getId(towMod, towEta, towSub, towID)) { //getId returns 0 when everything's OK, 1 otherwise
+      cerr << "------> StWiciED0PicoDstMaker::GetMatchingCluster: No SoftID! ABORTING!!!" << endl;
+      return NULL; //when towID is broken --> Goodbye!
+    }
+    //checking if there is a tower with some signal in it
+		StPicoBTowHit *emcHit = mPicoDst->btowHit(nextTowerId-1);
+    if(fBtowHits[towID]==NULL) {
+      cerr << "------> StWiciED0PicoDstMaker::GetMatchingCluster: Empty Tower! ABORTING!!!" << endl;
+      return NULL; //if towID correct but no hit in tower --> Goodbye!
+    }
+  }
+  
+  //in every cluster...
+  StSPtrVecEmcCluster&  clusters = detector->cluster()->clusters();
+  for(StSPtrVecEmcClusterIterator cIt = clusters.begin(); cIt != clusters.end(); cIt++) {
+    StPtrVecEmcRawHit& hits = (*cIt)->hit();
+    //...checking hit by unless the match is right
+    for(StPtrVecEmcRawHitIterator hIt = hits.begin(); hIt != hits.end(); hIt++) {
+      //converting form detector m-e-s to BEMC tower m-e-s
+      //if(detector->detectorId()!=kBarrelEmcTowerId) { //if det is not BEMC tower
+      //  if(geom->getEta((*hIt)->module(), (Int_t)(*hIt)->eta(), eta) || geom->getPhi((*hIt)->module(), (Int_t)(*hIt)->sub(), phi))
+      //    continue; //can't convert to eta, phi values (should not happen when the hit is correct)
+      //  if(fBtowGeom->getBin(phi, eta, hitMod, hitEta, hitSub))
+      //    continue; //can't convert to m-e-s of the BEMC tower (should not happen)
+      //}
+      //else { //for BEMC tower just asigning the values
+      //  hitMod = (*hIt)->module();
+      //  hitEta = (*hIt)->eta();
+      //  hitSub = (*hIt)->sub();
+      //}
+      //if(towMod==hitMod && towEta==hitEta && towSub==hitSub) {
+      //  assCl++;
+        clusterPosition.SetPtEtaPhi(geom->Radius(), (*cIt)->eta(), (*cIt)->phi());
+        GetDistance(geom->Radius(), position, clusterPosition, dist, distZ, distPhi);
+        
+        if(dist<minDist) { //checking if that's the cloasest cluster
+          minDist = dist;
+          minDistPhi = distPhi;
+          minDistZ = distZ;
+          selCluster = (*cIt);
+          assCl = 1;
+        }
+        break;
+      //} //if(hit match)
+    } //for(hits)
+  } //for(clusters)
+  selDist    = minDist;
+  selDistPhi = minDistPhi;
+  selDistZ   = minDistZ;
+  nMatchCls  = assCl;
+  return selCluster;
+} //end of GetMatchingCluster()
+*/
+//_______________________________________________________________________________________________
+//_______________________________________________________________________________________________
+//Find 2X2 cluster - obsolete
+//_______________________________________________________________________________________________
+
+int findClusterId(int towerId)
+{
+	int Rows = 1200;
+	int Columns = 4;
+	for(int row = 0; row < Rows; ++row)
+	{
+   for(int col = 0; col < Columns; ++col)
+   {
+      if(indexarr[row][col] == towerId) return row;
+   }
+	}
+	return -1;
+}
+
+//_______________________________________________________________________________________________
+//Find 2X2 cluster - obsolete
+//_______________________________________________________________________________________________
+
+Bool_t findCluster(StPicoDst *mPicoDst, StEmcGeom *mEmcGeom, int towerId, double *ecluster, double *etacluster, double *phicluster)
+{
+		double energy = 0;
+		array<double, 4> e;
+		array<double, 4> phi;
+		array<double, 4> eta;
+		e.fill(0);
+		phi.fill(0);
+		eta.fill(0);
+		Float_t etaTemp = 0;
+		Float_t phiTemp = 0;
+		
+		int cid = findClusterId(towerId);
+		
+		//look for the other towers in the cluster
+		for (int i=0; i<4; i++)
+		{
+			int towid = indexarr[cid][i];
+			bool bad = false;
+			for (int i = 0; i < nBadTowers; i++) 
+			{if (BadTowerArr[i] == towid) bad = true;}
+			if (bad) {/*cout << "found bad tower " << towid <<" , throw cluster " << cid << "  away" << endl;*/ return false;}
+			mEmcGeom->getEta(towid, etaTemp);
+      mEmcGeom->getPhi(towid, phiTemp);
+
+
+		//	if (towid == towerId) continue //no double counting of matched-tower energy
+			StPicoBTowHit *emcHit = mPicoDst->btowHit(towid-1);
+			if (emcHit == 0 || emcHit->energy() < 0.2) continue;
+			
+			e[i] = emcHit->energy();
+			energy+=e[i];
+
+		//weighing phi and eta of individual towers by their energy
+			phi[i] = phiTemp*e[i];
+			eta[i] = etaTemp*e[i];
+
+		}
+
+		*ecluster = energy;
+		if (energy > 0)
+		{
+			double sum = accumulate(phi.begin(), phi.end(), 0.0);
+
+			*phicluster = sum/energy;
+			sum = accumulate(eta.begin(), eta.end(), 0.0);
+			*etacluster = sum/energy;
+		}
+
+	e.fill(0);
+	phi.fill(0);
+	eta.fill(0);
+
+		
+		
+	
+	return true;
 }

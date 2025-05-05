@@ -127,12 +127,8 @@ void runPicoHFJetMaker(const Char_t *inputFile, const Char_t *outputFile="output
 
     //cout <<  "sInputFile.Data() is  " << sInputFile.Data() << endl;
 
-
-    //StPicoDstMaker *picoDstMaker = new StPicoDstMaker(static_cast<StPicoDstMaker::PicoIoMode>(StPicoDstMaker::IoRead), sInputFile.Data(), "picoDstMaker"); //for local testing only, added .Data() to sInputFile (robotmon)
-
     StMessMgr *msg = StMessMgr::Instance();
     msg->SwitchOff("Could not make BEMC detector");
-
 
     StPicoDstMaker* picoDstMaker = new StPicoDstMaker(StPicoDstMaker::IoRead, sInputFile, "picoDstMaker"); //for local testing only
     St_db_Maker *dbMaker = new St_db_Maker("StarDb","MySQL:StarDb");

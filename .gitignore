@@ -51,3 +51,4 @@
 *.la
 *.a
 *.lib
+temp_gccflags.c
