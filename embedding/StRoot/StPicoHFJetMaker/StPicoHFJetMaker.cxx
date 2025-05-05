@@ -269,70 +269,70 @@ int StPicoHFJetMaker::MakeJets() {
     if (trk->qaTruth() > 95) {
       inputParticle.set_user_index(trk->idTruth() - 1);
       jetTracks.push_back(inputParticle);
-    } // end loop over primary tracks
-
-    fullTracks = neutraljetTracks;
-    fullTracks.insert(
-        fullTracks.end(), jetTracks.begin(),
-        jetTracks.end()); // commenting this line will cause only neutral jets,
-                          // MAX NEUTRAL FRACTION HAS TO BE TURNED OFF
-
-    //==================================================================================//
-    // Jet part
-    //==================================================================================//
-    fastjet::AreaDefinition area_def(active_area_explicit_ghosts,
-                                     GhostedAreaSpec(fGhostMaxrap, 1, 0.01));
-
-    //"==============================background estimate===================="
-    fastjet::JetDefinition jet_def_for_rho(kt_algorithm, fRBg);
-    if (centrality == 1)
-      nJetsRemove = 2; // remove 2 hardest jets in central
-
-    fastjet::Selector selector = (!SelectorNHardest(nJetsRemove)) *
-                                 SelectorAbsEtaMax(1.0) * SelectorPtMin(0.01);
-
-    fastjet::JetMedianBackgroundEstimator bkgd_estimator(
-        selector, jet_def_for_rho, area_def);
-    bkgd_estimator.set_particles(fullTracks);
-    float rho = bkgd_estimator.rho();
-
-    for (unsigned int i = 0; i < fR.size(); i++) {
-      fastjet::JetDefinition jet_def(antikt_algorithm, fR[i]);
-      float maxRapJet = 1 - fR[i];
-
-      // MC jets
-      fastjet::ClusterSequenceArea mc_cluster_seq(MCjetTracks, jet_def,
-                                                  area_def);
-      vector<fastjet::PseudoJet> Mcjets_all =
-          sorted_by_pt(mc_cluster_seq.inclusive_jets(fJetPtMin));
-
-      fastjet::Selector McFiducial_cut_selector =
-          SelectorAbsEtaMax(maxRapJet) * SelectorPtMin(0.01) *
-          SelectorPtMax(1.5 * fpThatmax);
-      // throw out jets with pT larger than
-      // 1.5*pThat to eliminate high-weight
-
-      vector<fastjet::PseudoJet> McJets = McFiducial_cut_selector(Mcjets_all);
-      vector<MyJet> myMcJets;
-      for (auto &mcJet : McJets)
-        myMcJets.push_back(MyJet(mcJet, rho));
-
-      // Reco jets
-      fastjet::ClusterSequenceArea reco_cluster_seq(fullTracks, jet_def,
-                                                    area_def);
-      vector<fastjet::PseudoJet> fjets_all =
-          sorted_by_pt(reco_cluster_seq.inclusive_jets(fJetPtMin));
-      fastjet::Selector fiducial_cut_selector = SelectorAbsEtaMax(maxRapJet);
-
-      vector<fastjet::PseudoJet> RecoJets = fiducial_cut_selector(fjets_all);
-      vector<MyJet> myRecoJets;
-      for (auto &rcJet : RecoJets)
-        myRecoJets.push_back(MyJet(rcJet, rho));
-
-      vector<MatchedJetPair> MatchedJets;
-      MatchedJets = MatchJetsEtaPhi(myMcJets, myRecoJets, fR[i]);
     }
+  } // end loop over primary tracks
+
+  fullTracks = neutraljetTracks;
+  fullTracks.insert(
+      fullTracks.end(), jetTracks.begin(),
+      jetTracks.end()); // commenting this line will cause only neutral jets,
+                        // MAX NEUTRAL FRACTION HAS TO BE TURNED OFF
+
+  //==================================================================================//
+  // Jet part
+  //==================================================================================//
+  fastjet::AreaDefinition area_def(active_area_explicit_ghosts,
+                                   GhostedAreaSpec(fGhostMaxrap, 1, 0.01));
+
+  //"==============================background estimate===================="
+  fastjet::JetDefinition jet_def_for_rho(kt_algorithm, fRBg);
+  if (centrality == 1)
+    nJetsRemove = 2; // remove 2 hardest jets in central
+
+  fastjet::Selector selector = (!SelectorNHardest(nJetsRemove)) *
+                               SelectorAbsEtaMax(1.0) * SelectorPtMin(0.01);
+
+  fastjet::JetMedianBackgroundEstimator bkgd_estimator(
+      selector, jet_def_for_rho, area_def);
+  bkgd_estimator.set_particles(fullTracks);
+  float rho = bkgd_estimator.rho();
+
+  for (unsigned int i = 0; i < fR.size(); i++) {
+    fastjet::JetDefinition jet_def(antikt_algorithm, fR[i]);
+    float maxRapJet = 1 - fR[i];
+
+    // MC jets
+    fastjet::ClusterSequenceArea mc_cluster_seq(MCjetTracks, jet_def, area_def);
+    vector<fastjet::PseudoJet> Mcjets_all =
+        sorted_by_pt(mc_cluster_seq.inclusive_jets(fJetPtMin));
+
+    fastjet::Selector McFiducial_cut_selector = SelectorAbsEtaMax(maxRapJet) *
+                                                SelectorPtMin(0.01) *
+                                                SelectorPtMax(1.5 * fpThatmax);
+    // throw out jets with pT larger than
+    // 1.5*pThat to eliminate high-weight
+
+    vector<fastjet::PseudoJet> McJets = McFiducial_cut_selector(Mcjets_all);
+    vector<MyJet> myMcJets;
+    for (auto &mcJet : McJets)
+      myMcJets.push_back(MyJet(mcJet, rho));
+
+    // Reco jets
+    fastjet::ClusterSequenceArea reco_cluster_seq(fullTracks, jet_def,
+                                                  area_def);
+    vector<fastjet::PseudoJet> fjets_all =
+        sorted_by_pt(reco_cluster_seq.inclusive_jets(fJetPtMin));
+    fastjet::Selector fiducial_cut_selector = SelectorAbsEtaMax(maxRapJet);
+
+    vector<fastjet::PseudoJet> RecoJets = fiducial_cut_selector(fjets_all);
+    vector<MyJet> myRecoJets;
+    for (auto &rcJet : RecoJets)
+      myRecoJets.push_back(MyJet(rcJet, rho));
+
+    vector<MatchedJetPair> MatchedJets;
+    MatchedJets = MatchJetsEtaPhi(myMcJets, myRecoJets, fR[i]);
   }
+
   Sump.fill(0);
 
   Triggers.clear();
