@@ -23,57 +23,9 @@
 #include "fastjet/config.h"
 #include "fastjet/tools/JetMedianBackgroundEstimator.hh"
 
+#include "MyJet.h"
+
 using namespace std;
-
-struct MyJet {
-  double pt;
-  double pt_corr;
-  double eta;
-  double phi;
-  double area;
-  double rho;
-  double pt_lead;
-  int n_constituents;
-  double neutral_fraction;
-  bool trigger_match;
-  MyJet()
-      : pt(-9), pt_corr(-9), eta(-9), phi(-9), area(-9), rho(-9), pt_lead(-9),
-        n_constituents(-9), neutral_fraction(-9), trigger_match(false) {}
-
-  MyJet(double pt, double pt_corr, double eta, double phi, double area,
-        double rho, double pt_lead, int n_constituents, double neutral_fraction,
-        bool trigger_match)
-      : pt(pt), pt_corr(pt_corr), eta(eta), phi(phi), area(area), rho(rho),
-        pt_lead(pt_lead), n_constituents(n_constituents),
-        neutral_fraction(neutral_fraction), trigger_match(trigger_match) {}
-
-  MyJet(fastjet::PseudoJet jet, double rho)
-      : rho(rho) { // instant initialization
-    pt = jet.perp();
-    eta = jet.eta();
-    phi = jet.phi();
-    area = jet.area();
-    pt_corr = pt - area * rho;
-    vector<fastjet::PseudoJet> constituents = sorted_by_pt(jet.constituents());
-    pt_lead = constituents[0].perp();
-    n_constituents = constituents.size();
-
-    double neutral_sum = 0.0;
-    trigger_match = false;
-    for (const auto &constituent : constituents) {
-      int uidx = constituent.user_index();
-      if (uidx == 9999) {
-        trigger_match = true;
-      }
-      if (uidx == 0 || uidx == 9999) { // neutral particles
-        neutral_sum += constituent.perp();
-      }
-    }
-    neutral_fraction = neutral_sum / pt;
-  }
-};
-
-typedef pair<MyJet, MyJet> MatchedJetPair;
 
 vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
                                        const vector<MyJet> &RecoJets,
@@ -109,6 +61,48 @@ int StPicoHFJetMaker::InitJets() {
   TH1::SetDefaultSumw2();
 
   mOutList->Add(new TH1D("hcent", "centrality", 10, -1, 9));
+  TDirectory *currentDir = gDirectory;
+  // create directory for each radius
+  for (unsigned int i = 0; i < fR.size(); i++) {
+    TString dirName = Form("R_%.1f", fR[i]);
+    TDirectory *dir = currentDir->mkdir(dirName);
+    dir->cd();
+    TTree *newTree = new TTree("JetTree", "JetTree");
+    newTree->Branch("deltaR", &fDeltaR, "deltaR/F");
+    newTree->Branch("mc_pt", &fMcJet.pt, "mc_pt/F");
+    newTree->Branch("mc_pt_corr", &fMcJet.pt_corr, "mc_pt_corr/F");
+    newTree->Branch("mc_eta", &fMcJet.eta, "mc_eta/F");
+    newTree->Branch("mc_phi", &fMcJet.phi, "mc_phi/F");
+    newTree->Branch("mc_area", &fMcJet.area, "mc_area/F");
+    newTree->Branch("mc_rho", &fMcJet.rho, "mc_rho/F");
+    newTree->Branch("mc_pt_lead", &fMcJet.pt_lead, "mc_pt_lead/F");
+    newTree->Branch("mc_n_constituents", &fMcJet.n_constituents,
+                    "mc_n_constituents/I");
+    newTree->Branch("mc_neutral_fraction", &fMcJet.neutral_fraction,
+                    "mc_neutral_fraction/F");
+    newTree->Branch("mc_trigger_match", &fMcJet.trigger_match,
+                    "mc_trigger_match/O");
+
+    newTree->Branch("reco_pt", &fRecoJet.pt, "reco_pt/F");
+    newTree->Branch("reco_pt_corr", &fRecoJet.pt_corr, "reco_pt_corr/F");
+    newTree->Branch("reco_eta", &fRecoJet.eta, "reco_eta/F");
+    newTree->Branch("reco_phi", &fRecoJet.phi, "reco_phi/F");
+    newTree->Branch("reco_area", &fRecoJet.area, "reco_area/F");
+    newTree->Branch("reco_rho", &fRecoJet.rho, "reco_rho/F");
+    newTree->Branch("reco_pt_lead", &fRecoJet.pt_lead, "reco_pt_lead/F");
+    newTree->Branch("reco_n_constituents", &fRecoJet.n_constituents,
+                    "reco_n_constituents/I");
+    newTree->Branch("reco_neutral_fraction", &fRecoJet.neutral_fraction,
+                    "reco_neutral_fraction/F");
+    newTree->Branch("reco_trigger_match", &fRecoJet.trigger_match,
+                    "reco_trigger_match/O");
+
+    fTree.push_back(newTree);
+    // add to the list
+    // mOutList->Add(newTree);
+    currentDir->cd();
+  }
+
   return kStOK;
 }
 
@@ -116,10 +110,26 @@ int StPicoHFJetMaker::InitJets() {
 void StPicoHFJetMaker::ClearJets(Option_t *opt = "") { return; }
 
 // _________________________________________________________
-int StPicoHFJetMaker::FinishJets() { return kStOK; }
+int StPicoHFJetMaker::FinishJets() {
+  TDirectory *currentDir = gDirectory;
+  TFile *file = currentDir->GetFile(); // get output file
+
+  for (unsigned int i = 0; i < fTree.size(); i++) {
+    TString dirName = Form("R_%.1f", fR[i]);
+    TDirectory *dir = (TDirectory *)file->Get(dirName);
+    dir->cd();
+    if (fTree[i]) {
+      fTree[i]->Write();
+    }
+  }
+  currentDir->cd();
+
+  return kStOK;
+}
 
 // _________________________________________________________
 int StPicoHFJetMaker::MakeJets() {
+  TH1F *hcent = static_cast<TH1F *>(mOutList->FindObject("hcent"));
 
   vector<fastjet::PseudoJet> jetTracks;
   vector<fastjet::PseudoJet> neutraljetTracks; // from bemc towers only
@@ -134,20 +144,20 @@ int StPicoHFJetMaker::MakeJets() {
   double vz = mPrimVtx.z();
   mRefmultCorrUtil->setEvent(fRunNumber, refMult, mPicoDst->event()->ZDCx(),
                              vz);
-  int centrality = mRefmultCorrUtil->centrality9(); // 0 = 0-5 %,..., 8 = 70-80
-                                                    // %
-  if (centrality == -1)
-    return kStOk; // no centrality
-  float Weight = 1.0;
-  Weight = mRefmultCorrUtil->weight();
-  float weight = Weight * fWeight; // centrality weight * cross section weight
+  fCentrality = mRefmultCorrUtil->centrality9(); // 0 = 0-5 %,..., 8 = 70-80
+                                                 // %
+  if (fCentrality == -1)
+    return kStOk; // no fCentrality
+  if (fCentrality == 0)
+    fCentrality = 1; // merge 0-5% and 5-10% into 0-10%
+  if (fCentrality == 8)
+    fCentrality = 7; // merge 60-70% and 70-80% into 60-80%
 
-  if (centrality == 0)
-    centrality = 1; // merge 0-5% and 5-10% into 0-10%
-  if (centrality == 8)
-    centrality = 7; // merge 60-70% and 70-80% into 60-80%
+  float fDeltaR;
+  int fCentrality;
+  float fCentralityWeight = mRefmultCorrUtil->weight();
 
-  static_cast<TH1D *>(mOutList->FindObject("hcent"))->Fill(centrality, weight);
+  hcent->Fill(fCentrality, fCentralityWeight);
 
   // MC tracks
   int noMCtracks = mPicoDst->numberOfMcTracks();
@@ -281,34 +291,37 @@ int StPicoHFJetMaker::MakeJets() {
   //==================================================================================//
   // Jet part
   //==================================================================================//
-  fastjet::AreaDefinition area_def(active_area_explicit_ghosts,
-                                   GhostedAreaSpec(fGhostMaxrap, 1, 0.01));
+  fastjet::AreaDefinition area_def(
+      fastjet::active_area_explicit_ghosts,
+      fastjet::GhostedAreaSpec(fGhostMaxrap, 1, 0.01));
 
-  //"==============================background estimate===================="
-  fastjet::JetDefinition jet_def_for_rho(kt_algorithm, fRBg);
-  if (centrality == 1)
+  //====================background estimate=======================//
+  fastjet::JetDefinition jet_def_for_rho(fastjet::kt_algorithm, fRBg);
+  if (fCentrality == 1)
     nJetsRemove = 2; // remove 2 hardest jets in central
 
-  fastjet::Selector selector = (!SelectorNHardest(nJetsRemove)) *
-                               SelectorAbsEtaMax(1.0) * SelectorPtMin(0.01);
+  fastjet::Selector selector = (!fastjet::SelectorNHardest(nJetsRemove)) *
+                               fastjet::SelectorAbsEtaMax(1.0) *
+                               fastjet::SelectorPtMin(0.01);
 
   fastjet::JetMedianBackgroundEstimator bkgd_estimator(
       selector, jet_def_for_rho, area_def);
   bkgd_estimator.set_particles(fullTracks);
   float rho = bkgd_estimator.rho();
+  //======================================================================//
 
   for (unsigned int i = 0; i < fR.size(); i++) {
-    fastjet::JetDefinition jet_def(antikt_algorithm, fR[i]);
+    fastjet::JetDefinition jet_def(fastjet::antikt_algorithm, fR[i]);
     float maxRapJet = 1 - fR[i];
 
-    // MC jets
+    //==============================MC jets===============================//
     fastjet::ClusterSequenceArea mc_cluster_seq(MCjetTracks, jet_def, area_def);
     vector<fastjet::PseudoJet> Mcjets_all =
         sorted_by_pt(mc_cluster_seq.inclusive_jets(fJetPtMin));
 
-    fastjet::Selector McFiducial_cut_selector = SelectorAbsEtaMax(maxRapJet) *
-                                                SelectorPtMin(0.01) *
-                                                SelectorPtMax(1.5 * fpThatmax);
+    fastjet::Selector McFiducial_cut_selector =
+        fastjet::SelectorAbsEtaMax(maxRapJet) * fastjet::SelectorPtMin(0.01) *
+        fastjet::SelectorPtMax(1.5 * fpThatmax);
     // throw out jets with pT larger than
     // 1.5*pThat to eliminate high-weight
 
@@ -316,21 +329,31 @@ int StPicoHFJetMaker::MakeJets() {
     vector<MyJet> myMcJets;
     for (auto &mcJet : McJets)
       myMcJets.push_back(MyJet(mcJet, rho));
+    //======================================================================//
 
-    // Reco jets
+    //==============================Reco jets===============================//
     fastjet::ClusterSequenceArea reco_cluster_seq(fullTracks, jet_def,
                                                   area_def);
     vector<fastjet::PseudoJet> fjets_all =
         sorted_by_pt(reco_cluster_seq.inclusive_jets(fJetPtMin));
-    fastjet::Selector fiducial_cut_selector = SelectorAbsEtaMax(maxRapJet);
+    fastjet::Selector fiducial_cut_selector =
+        fastjet::SelectorAbsEtaMax(maxRapJet);
 
     vector<fastjet::PseudoJet> RecoJets = fiducial_cut_selector(fjets_all);
     vector<MyJet> myRecoJets;
     for (auto &rcJet : RecoJets)
       myRecoJets.push_back(MyJet(rcJet, rho));
+    //======================================================================//
 
     vector<MatchedJetPair> MatchedJets;
     MatchedJets = MatchJetsEtaPhi(myMcJets, myRecoJets, fR[i]);
+
+    for (unsigned int j = 0; j < MatchedJets.size(); j++) {
+      fMcJet = MatchedJets[j].first;
+      fRecoJet = MatchedJets[j].second;
+      fDeltaR = fMcJet.deltaR(fRecoJet);
+      fTree[i]->Fill();
+    }
   }
 
   Sump.fill(0);

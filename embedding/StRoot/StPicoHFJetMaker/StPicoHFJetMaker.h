@@ -40,6 +40,8 @@
 
 #include "StMaker.h"
 
+#include "MyJet.h"
+
 using namespace std;
 
 class StPicoDst;
@@ -73,22 +75,19 @@ public:
   virtual Double_t vertexCorrectedEta(double eta, double vz);
   virtual Bool_t GetCaloTrackMomentum(StPicoDst *mPicoDst, TVector3 mPrimVtx);
   virtual Int_t FindTriggerTowers(Int_t level);
-  virtual int GetTriggerTower(int iTow);
 
   int SetHighTowerVar(StMcTrack *mcTrack, bool isele);
 
   StEmcADCtoEMaker *mADCtoEMaker;
   StBemcTables *mTables;
 
-  void doAuAu(bool kDoAuAu);
   void setEmbPythia(bool kEmbPythia);
 
   void setR(vector<float> &fR);
   void setAcuts(vector<float> &fAcuts);
-  void setEmbPt(vector<float> &fEmbPt);
 
   void setGhostMaxrap(float fGhostMaxrap);
-  void setNpTlead(int npTlead);
+
   void setR_bg(float fR_bg);
   void setNJetsRemove(int nJetsRemove);
   void setJetPtMin(float jetPtMin);
@@ -97,8 +96,6 @@ public:
 
   void setTriggerThreshold(float fTrgthresh);
 
-  /*void setRefMutCorr(StRefMultCorr* gRefMultCorr);
-  StRefMultCorr* getRefMultCorr();*/
   void setRefMultCorr(StRefMultCorr *RefMultCorr);
   StRefMultCorr *getRefMultCorr();
 
@@ -113,22 +110,25 @@ public:
 
   enum eMcJetType { SingleParticle, Pythia, Jewel };
 
-  //    int InitRun(int runNumber);
-
 protected:
-  TString mInputFileName; //! *.list - MuDst or picoDst  //Jana
+  TString mInputFileName; //! *.list - MuDst or picoDst
 
 private:
   // -- private members --------------------------
 
   // -- ADD USER MEMBERS HERE -------------------
-  bool kDoAuAu;
+  vector<TTree *> fTree;
+  MyJet fRecoJet;
+  MyJet fMcJet;
+  float fDeltaR;
+  int fCentrality;
+  float fCentralityWeight;
+  float fXsecWeight;
 
   int fRunNumber;
 
   vector<float> fR;
   vector<float> fAcuts;
-  vector<float> fEmbPt;
 
   bool kEmbPythia;
 
@@ -175,10 +175,6 @@ private:
   ClassDef(StPicoHFJetMaker, 0)
 };
 
-inline void StPicoHFJetMaker::doAuAu(bool kDoAuAu) {
-  StPicoHFJetMaker::kDoAuAu = kDoAuAu;
-}
-
 inline void StPicoHFJetMaker::setEmbPythia(bool kEmbPythia) {
   StPicoHFJetMaker::kEmbPythia = kEmbPythia;
 }
@@ -191,9 +187,6 @@ inline void StPicoHFJetMaker::setAcuts(vector<float> &fAcuts) {
   StPicoHFJetMaker::fAcuts = fAcuts;
 }
 
-inline void StPicoHFJetMaker::setEmbPt(vector<float> &fEmbPt) {
-  StPicoHFJetMaker::fEmbPt = fEmbPt;
-}
 
 inline void StPicoHFJetMaker::setR_bg(float fR_bg) {
   StPicoHFJetMaker::fRBg = fR_bg;
@@ -217,9 +210,6 @@ inline void StPicoHFJetMaker::setMcJetType(unsigned int us) {
 
 inline unsigned int StPicoHFJetMaker::mcJetType() { return mMcJetType; }
 
-inline void StPicoHFJetMaker::setNpTlead(int npTlead) {
-  StPicoHFJetMaker::npTlead = npTlead;
-}
 
 inline void StPicoHFJetMaker::setHadronCorr(float corr) { fHadronCorr = corr; }
 
@@ -232,7 +222,6 @@ inline void StPicoHFJetMaker::setMaxDcaZHadronCorr(float max) {
 }
 
 inline void StPicoHFJetMaker::setCutETmin(float min) { fETmincut = min; }
-
 
 inline void StPicoHFJetMaker::setTriggerThreshold(float trgthresh) {
   fTrgthresh = trgthresh;
@@ -252,8 +241,5 @@ inline void StPicoHFJetMaker::setMCparameters(float pThatmin, float pThatmax,
 inline StRefMultCorr *StPicoHFJetMaker::getRefMultCorr() {
   return mRefmultCorrUtil;
 }
-
-
-
 
 #endif
