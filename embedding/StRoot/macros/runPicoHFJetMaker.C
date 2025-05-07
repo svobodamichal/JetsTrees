@@ -31,6 +31,7 @@
 #ifndef __CINT__
 #include "TChain.h"
 #include "TROOT.h"
+#include "TString.h"
 #include "TSystem.h"
 
 #include "StChain/StChain.h"
@@ -59,20 +60,40 @@ using namespace std;
 class StChain;
 #endif
 
-StChain *chain;
-
 void runPicoHFJetMaker(
     TString inputFile, TString outputFile = "outputBaseName",
-    const unsigned int makerMode = 0 /*kAnalyze*/, TString treeName = "picoDst",
-    const float pThatmin = 0., float pThatmax = -1.,
-    const float xweight = 1.) { // this line added for Embedding analysis
+    const unsigned int makerMode = 0 /*kAnalyze*/,
+    TString treeName = "picoDst") { // this line added for Embedding analysis
 
 #ifdef __CINT__
   gROOT->LoadMacro("loadSharedHFLibraries.C");
   loadSharedHFLibraries();
 #endif
 
-  chain = new StChain();
+  // pThat bins
+  std::vector<TString> pt_bins_name; // CINT does not support c++11
+  pt_bins_name.push_back("3_5");
+  pt_bins_name.push_back("5_7");
+  pt_bins_name.push_back("7_9");
+  pt_bins_name.push_back("9_11");
+  pt_bins_name.push_back("11_15");
+  pt_bins_name.push_back("15_20");
+  pt_bins_name.push_back("20_25");
+  pt_bins_name.push_back("25_30");
+  pt_bins_name.push_back("30_40");
+  pt_bins_name.push_back("40_50");
+  pt_bins_name.push_back("50_-1");
+
+  float pt_bins[] = {3.0,  5.0,  7.0,  9.0,  11.0, 15.0,
+                     20.0, 25.0, 30.0, 40.0, 50.0, -1};
+
+  // cross-section weights
+
+  float weights[] = {1.616e+0,  1.355e-01, 2.288e-02, 5.524e-03,
+                     2.203e-03, 3.437e-04, 4.681e-05, 8.532e-06,
+                     2.178e-06, 1.198e-07, 6.939e-09};
+
+  StChain *chain = new StChain();
   // ========================================================================================
   // makerMode    = StPicoJetMaker::kAnalyze;
   // ========================================================================================
@@ -104,8 +125,6 @@ void runPicoHFJetMaker(
     cout << "Unknown makerMode! Exiting..." << endl;
     exit(1);
   }
-
-  // cout <<  "inputFile.Data() is  " << inputFile.Data() << endl;
 
   StMessMgr *msg = StMessMgr::Instance();
   msg->SwitchOff("Could not make BEMC detector");
@@ -194,11 +213,6 @@ void runPicoHFJetMaker(
   R.push_back(0.3);
   R.push_back(0.4);
 
-  vector<float> Acuts;
-  Acuts.push_back(0.07);
-  Acuts.push_back(0.2);
-  Acuts.push_back(0.4);
-
   // TPC setters
 
   stPicoHFJetMaker->setGhostMaxrap(1.0);
@@ -206,7 +220,6 @@ void runPicoHFJetMaker(
   stPicoHFJetMaker->setJetPtMin(0.2); // default
   // stPicoHFJetMaker->setJetPtMin(0.5);
   stPicoHFJetMaker->setCutETmin(0.2);
-  stPicoHFJetMaker->setAcuts(Acuts);
   stPicoHFJetMaker->setNJetsRemove(1);
   stPicoHFJetMaker->setR_bg(0.3);
 
@@ -225,8 +238,24 @@ void runPicoHFJetMaker(
   stPicoHFJetMaker->setMaxDcaZHadronCorr(
       3.0); // cm, max DCA_z for global tracks used for hadronic correction
 
-  stPicoHFJetMaker->setMCparameters(pThatmin, pThatmax,
-                                    xweight); // pThat range and xsection weight
+  float pThatmin = -1;
+  float pThatmax = -1;
+  float xsecWeight = -1;
+  for (unsigned int pt_name = 0; pt_name < pt_bins_name.size(); pt_name++) {
+    if (inputFile.Contains(pt_bins_name[pt_name].Data())) {
+      pThatmin = pt_bins[pt_name];
+      pThatmax = pt_bins[pt_name + 1];
+      xsecWeight = weights[pt_name];
+      cout << "pThat range found: " << pThatmin << " - " << pThatmax
+           << " with xsecWeight = " << xsecWeight << endl;
+    }
+  }
+
+  if (xsecWeight == -1) {
+    cout << "No pThat range found! Exiting..." << endl;
+    exit(1);
+  }
+  stPicoHFJetMaker->setMCparameters(pThatmin, pThatmax, xsecWeight);
 
   StRefMultCorr *grefmultCorrUtil =
       CentralityMaker::instance()

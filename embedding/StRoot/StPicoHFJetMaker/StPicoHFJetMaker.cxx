@@ -33,12 +33,12 @@ vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
 
 ClassImp(StPicoHFJetMaker)
 
-    StPicoHFJetMaker::StPicoHFJetMaker(char const *name,
-                                       StPicoDstMaker *picoMaker,
-                                       char const *outputBaseFileName,
-                                       char const *inputHFListHFtree = "")
+    StPicoHFJetMaker::StPicoHFJetMaker(TString name, StPicoDstMaker *picoMaker,
+                                       TString outputBaseFileName,
+                                       TString inputHFListHFtree = "")
     : StPicoJetMaker(name, picoMaker, outputBaseFileName, inputHFListHFtree),
       mRefmultCorrUtil(NULL) {
+
   // constructor
 }
 
@@ -72,7 +72,7 @@ int StPicoHFJetMaker::InitJets() {
     jetTree->Branch("centrality", &fCentrality, "centrality/I");
     jetTree->Branch("centralityWeight", &fCentralityWeight,
                     "centralityWeight/F");
-    jetTree->Branch("xsecWeight", &fXsecWeight, "xsecWeight/I");
+    jetTree->Branch("xsecWeight", &fXsecWeight, "xsecWeight/F");
     jetTree->Branch("deltaR", &fDeltaR, "deltaR/F");
     jetTree->Branch("mc_pt", &fMcJet.pt, "mc_pt/F");
     jetTree->Branch("mc_eta", &fMcJet.eta, "mc_eta/F");
@@ -230,7 +230,7 @@ int StPicoHFJetMaker::MakeJets() {
     //    max difference: ET = 0.124452 for E = 0.2, if we cut on |Vz| < 30 cm
     float Toweta = towerPosition.pseudoRapidity();
     double ET = towE / cosh(Toweta);
-    if (ET > 30) { /*cout << towE << endl;*/
+    if (ET > 30) {
       continue;
     } // ignore E > 30 GeV towers
     // no clustering
@@ -354,7 +354,6 @@ int StPicoHFJetMaker::MakeJets() {
   }
 
   Sump.fill(0);
-
   Triggers.clear();
   return kStOK;
 }
@@ -462,48 +461,36 @@ Int_t StPicoHFJetMaker::FindTriggerTowers(Int_t level = 2) {
   return Triggers.size();
 }
 
-// Calculate delta R between two jets
-double calculateDeltaR(const MyJet &jet1, const MyJet &jet2) {
-  double etaDiff = jet1.eta - jet2.eta;
-  double phiDiff = TVector2::Phi_mpi_pi(jet1.phi - jet2.phi);
-  return sqrt(etaDiff * etaDiff + phiDiff * phiDiff);
-}
-
 vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
                                        const vector<MyJet> &RecoJets,
                                        const double &R) {
-
+  vector<MyJet> recoJetsCopy = RecoJets; // copy to avoid modifying the original
   vector<MatchedJetPair> matchedJets;
   MyJet dummy;
-  vector<MyJet> mcJets = McJets;     // copy to avoid modifying the original
-  vector<MyJet> recoJets = RecoJets; // copy to avoid modifying the original
 
-  for (const auto &mcJet : mcJets) {
+  for (const auto &mcJet : McJets) {
     bool isMatched = false;
     // Try to find a matching reco jet
-    for (auto rcit = recoJets.begin(); rcit != recoJets.end();) {
+    for (auto rcit = recoJetsCopy.begin(); rcit != recoJetsCopy.end();) {
       MyJet recoJet = *rcit;
+      double deltaR = mcJet.deltaR(recoJet);
 
-      double deltaR = calculateDeltaR(mcJet, recoJet);
       if (deltaR < 0.6 * R) { // motivated by ALICE analysis, to be revised
         matchedJets.push_back(make_pair(mcJet, recoJet));
         isMatched = true;
-        rcit = recoJets.erase(rcit); // remove matched jet from recoJets
+        rcit = recoJetsCopy.erase(rcit); // remove matched jet from recoJetsCopy
         break;
-      } else { // look further for the next jet
+      } else // look further for the next reco jet
         ++rcit;
-      }
     }
-
     // If no match was found for this MC jet, record it as unmatched
     if (!isMatched)
       matchedJets.push_back(make_pair(mcJet, dummy));
   }
 
   // Add the remaining unmatched reco jets
-  for (const auto &recoJet : recoJets) {
+  for (const auto &recoJet : recoJetsCopy)
     matchedJets.push_back(make_pair(dummy, recoJet));
-  }
 
   return matchedJets;
 }

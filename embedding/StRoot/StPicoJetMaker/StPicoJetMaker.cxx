@@ -4,9 +4,9 @@ ClassImp(StPicoJetMaker)
 
     // _________________________________________________________
     // _________________________________________________________
-    StPicoJetMaker::StPicoJetMaker(char const *name, StPicoDstMaker *picoMaker,
-                                   char const *outputBaseFileName,
-                                   char const *inputHFListHFtree = "")
+    StPicoJetMaker::StPicoJetMaker(TString name, StPicoDstMaker *picoMaker,
+                                   TString outputBaseFileName,
+                                   TString inputHFListHFtree = "")
     : StMaker(name), mPicoDst(NULL), mBField(0.), mOutList(NULL),
       mMakerMode(StPicoJetMaker::kAnalyze), mMcMode(false),
       mOutputTreeName("picoHFtree"), mOutputFileBaseName(outputBaseFileName),

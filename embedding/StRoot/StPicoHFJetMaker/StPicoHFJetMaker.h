@@ -59,12 +59,8 @@ class StEmcDecoder;
 
 class StPicoHFJetMaker : public StPicoJetMaker {
 public:
-  //  StPicoHFJetMaker(char const* name, StPicoDstMaker* picoMaker, char const*
-  //  outputBaseFileName);
-  // Jana changed to
-  StPicoHFJetMaker(char const *name, StPicoDstMaker *picoMaker,
-                   char const *outputBaseFileName,
-                   char const *inputHFListHFtree);
+  StPicoHFJetMaker(TString name, StPicoDstMaker *picoMaker,
+                   TString outputBaseFileName, TString inputHFListHFtree);
   virtual ~StPicoHFJetMaker();
 
   virtual Int_t InitJets();
@@ -123,7 +119,6 @@ private:
   float fDeltaR;
   int fCentrality;
   float fCentralityWeight;
-  float fXsecWeight;
 
   int fRunNumber;
 
@@ -135,7 +130,7 @@ private:
   float fRBg;
   float fGhostMaxrap;
   float fJetPtMin;
-  int npTlead;
+
   int nJetsRemove;
   unsigned int mMcJetType;
   StRefMultCorr *mRefmultCorrUtil;
@@ -162,7 +157,7 @@ private:
   // pThat range and cross-section weight
   float fpThatmin;
   float fpThatmax;
-  float fWeight;
+  float fXsecWeight;
 
   float bemcEnergy[4801];
   int bemcADC[4801];
@@ -187,7 +182,6 @@ inline void StPicoHFJetMaker::setAcuts(vector<float> &fAcuts) {
   StPicoHFJetMaker::fAcuts = fAcuts;
 }
 
-
 inline void StPicoHFJetMaker::setR_bg(float fR_bg) {
   StPicoHFJetMaker::fRBg = fR_bg;
 }
@@ -209,7 +203,6 @@ inline void StPicoHFJetMaker::setMcJetType(unsigned int us) {
 }
 
 inline unsigned int StPicoHFJetMaker::mcJetType() { return mMcJetType; }
-
 
 inline void StPicoHFJetMaker::setHadronCorr(float corr) { fHadronCorr = corr; }
 
@@ -235,7 +228,7 @@ inline void StPicoHFJetMaker::setMCparameters(float pThatmin, float pThatmax,
                                               float xweight) {
   fpThatmin = pThatmin;
   fpThatmax = pThatmax;
-  fWeight = xweight;
+  fXsecWeight = xweight;
 }
 
 inline StRefMultCorr *StPicoHFJetMaker::getRefMultCorr() {

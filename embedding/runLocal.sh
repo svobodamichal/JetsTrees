@@ -12,4 +12,4 @@ pthatmin=50
 pthatmax=-1
 xweight=6.939e-09
 
-root4star -l -b -q 'StRoot/macros/runPicoHFJetMaker.C("test.list","output_test",0,"PicoDst",'$pthatmin', '$pthatmax', '$xweight')'
+root4star -l -b -q 'StRoot/macros/runPicoHFJetMaker.C("testPythia6picoDsts_pt50_-1.list","output_test",0,"PicoDst")'
