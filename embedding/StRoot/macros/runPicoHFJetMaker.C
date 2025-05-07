@@ -202,19 +202,8 @@ void runPicoHFJetMaker(
   Acuts.push_back(0.2);
   Acuts.push_back(0.4);
 
-  vector<float> EmbPt;
-  EmbPt.push_back(3.0);
-  EmbPt.push_back(5.0);
-  EmbPt.push_back(7.0);
-  EmbPt.push_back(10.0);
-  EmbPt.push_back(20.0);
-
   // TPC setters
 
-
-
-
-  stPicoHFJetMaker->setNpTlead(10);
   stPicoHFJetMaker->setGhostMaxrap(1.0);
   stPicoHFJetMaker->setR(R);
   stPicoHFJetMaker->setJetPtMin(0.2); // default
@@ -223,7 +212,6 @@ void runPicoHFJetMaker(
   stPicoHFJetMaker->setAcuts(Acuts);
   stPicoHFJetMaker->setNJetsRemove(1);
   stPicoHFJetMaker->setR_bg(0.3);
-  stPicoHFJetMaker->setEmbPt(EmbPt);
 
   stPicoHFJetMaker->setEmbPythia(0); // 0 = single particle, 1 = pythia6
   // stPicoHFJetMaker->setEmbPythia(1);
