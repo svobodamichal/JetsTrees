@@ -120,7 +120,6 @@ void runPicoHFJetMaker(
 
   stPicoHFJetMaker->setMakerMode(makerMode);
   stPicoHFJetMaker->setTreeName(treeName);
-  // stPicoHFJetMaker->setMcMode(true);
   stPicoHFJetMaker->setMcMode(false);
 
   StPicoCuts *picoCuts = new StPicoCuts("PicoCuts");
@@ -136,7 +135,6 @@ void runPicoHFJetMaker(
   // picoCuts->setHotTowerListFileName(hotTowerListFileName);
 
   // -- ADD USER CUTS HERE ----------------------------
-  // picoCuts->setCutVzMax(6.); //HFT range
   picoCuts->setCutVzMax(30.);
   picoCuts->setCutVzVpdVzMax(3.);
   // picoCuts->setCutRefMult(396, 100000); //REMEMBER now only central
@@ -166,7 +164,6 @@ void runPicoHFJetMaker(
 
   // starprod AuAu 2014 luminosity - split low mid high, without lumi = early
   // runs
-
   /*
           //SL16j triggers
     picoCuts->addTriggerId(520802);    // VPDMB-5-p-hlt
@@ -230,14 +227,6 @@ void runPicoHFJetMaker(
 
   stPicoHFJetMaker->setMCparameters(pThatmin, pThatmax,
                                     xweight); // pThat range and xsection weight
-  // set refmultCorr
-  // cout<<"test"<<endl;
-
-  // USE gRefMultCorr or RefMultCorr??
-
-  // StRefMultCorr* grefmultCorrUtil =
-  // CentralityMaker::instance()->getgRefMultCorr_P18ih(); //new StRefMultCorr,
-  // info about Run16, SL16d in the same file as for Run14, SL16d
 
   StRefMultCorr *grefmultCorrUtil =
       CentralityMaker::instance()
@@ -245,25 +234,14 @@ void runPicoHFJetMaker(
                                                    // about Run14
   stPicoHFJetMaker->setRefMultCorr(grefmultCorrUtil);
 
-  // StRefMultCorr* refmultCorrUtil =
-  // CentralityMaker::instance()->getgRefMultCorr_VpdMB30(); //new
-  // StRefMultCorr, info about Run14
-  // stPicoHFJetMaker->setRefMultCorr(refmultCorrUtil);
-  // cout<<"test2"<<endl;
-  //  ========================================================================================
-
   // ========================================================================================
 
-  // start_t = clock(); // getting starting time
   chain->Init();
-  // cout << "chain->Init();" << endl;
   long int nEvents = picoDstMaker->chain()->GetEntries();
   //  int nEvents = 10000;
-  // cout << " Total entries = " << nEvents << endl;
   // if(nEvents>total) nEvents = total;
   for (Int_t i = 0; i < nEvents; i++) {
     // if(i%10000 == 0) cout << "Working on eventNumber " << i << endl;
-
     chain->Clear();
     int iret = chain->Make(i);
 

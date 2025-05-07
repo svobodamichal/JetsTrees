@@ -67,39 +67,39 @@ int StPicoHFJetMaker::InitJets() {
     TString dirName = Form("R_%.1f", fR[i]);
     TDirectory *dir = currentDir->mkdir(dirName);
     dir->cd();
-    TTree *newTree = new TTree("JetTree", "JetTree");
-    newTree->Branch("deltaR", &fDeltaR, "deltaR/F");
-    newTree->Branch("mc_pt", &fMcJet.pt, "mc_pt/F");
-    newTree->Branch("mc_pt_corr", &fMcJet.pt_corr, "mc_pt_corr/F");
-    newTree->Branch("mc_eta", &fMcJet.eta, "mc_eta/F");
-    newTree->Branch("mc_phi", &fMcJet.phi, "mc_phi/F");
-    newTree->Branch("mc_area", &fMcJet.area, "mc_area/F");
-    newTree->Branch("mc_rho", &fMcJet.rho, "mc_rho/F");
-    newTree->Branch("mc_pt_lead", &fMcJet.pt_lead, "mc_pt_lead/F");
-    newTree->Branch("mc_n_constituents", &fMcJet.n_constituents,
+    TTree *jetTree = new TTree("JetTree", "JetTree");
+    jetTree->Branch("runId", &fRunNumber, "runId/I");
+    jetTree->Branch("centrality", &fCentrality, "centrality/I");
+    jetTree->Branch("centralityWeight", &fCentralityWeight,
+                    "centralityWeight/F");
+    jetTree->Branch("xsecWeight", &fXsecWeight, "xsecWeight/I");
+    jetTree->Branch("deltaR", &fDeltaR, "deltaR/F");
+    jetTree->Branch("mc_pt", &fMcJet.pt, "mc_pt/F");
+    jetTree->Branch("mc_eta", &fMcJet.eta, "mc_eta/F");
+    jetTree->Branch("mc_phi", &fMcJet.phi, "mc_phi/F");
+    jetTree->Branch("mc_area", &fMcJet.area, "mc_area/F");
+    jetTree->Branch("mc_pt_lead", &fMcJet.pt_lead, "mc_pt_lead/F");
+    jetTree->Branch("mc_n_constituents", &fMcJet.n_constituents,
                     "mc_n_constituents/I");
-    newTree->Branch("mc_neutral_fraction", &fMcJet.neutral_fraction,
+    jetTree->Branch("mc_neutral_fraction", &fMcJet.neutral_fraction,
                     "mc_neutral_fraction/F");
-    newTree->Branch("mc_trigger_match", &fMcJet.trigger_match,
-                    "mc_trigger_match/O");
 
-    newTree->Branch("reco_pt", &fRecoJet.pt, "reco_pt/F");
-    newTree->Branch("reco_pt_corr", &fRecoJet.pt_corr, "reco_pt_corr/F");
-    newTree->Branch("reco_eta", &fRecoJet.eta, "reco_eta/F");
-    newTree->Branch("reco_phi", &fRecoJet.phi, "reco_phi/F");
-    newTree->Branch("reco_area", &fRecoJet.area, "reco_area/F");
-    newTree->Branch("reco_rho", &fRecoJet.rho, "reco_rho/F");
-    newTree->Branch("reco_pt_lead", &fRecoJet.pt_lead, "reco_pt_lead/F");
-    newTree->Branch("reco_n_constituents", &fRecoJet.n_constituents,
+    jetTree->Branch("reco_pt", &fRecoJet.pt, "reco_pt/F");
+    jetTree->Branch("reco_pt_corr", &fRecoJet.pt_corr, "reco_pt_corr/F");
+    jetTree->Branch("reco_eta", &fRecoJet.eta, "reco_eta/F");
+    jetTree->Branch("reco_phi", &fRecoJet.phi, "reco_phi/F");
+    jetTree->Branch("reco_area", &fRecoJet.area, "reco_area/F");
+    jetTree->Branch("reco_rho", &fRecoJet.rho, "reco_rho/F");
+    jetTree->Branch("reco_pt_lead", &fRecoJet.pt_lead, "reco_pt_lead/F");
+    jetTree->Branch("reco_n_constituents", &fRecoJet.n_constituents,
                     "reco_n_constituents/I");
-    newTree->Branch("reco_neutral_fraction", &fRecoJet.neutral_fraction,
+    jetTree->Branch("reco_neutral_fraction", &fRecoJet.neutral_fraction,
                     "reco_neutral_fraction/F");
-    newTree->Branch("reco_trigger_match", &fRecoJet.trigger_match,
+    jetTree->Branch("reco_trigger_match", &fRecoJet.trigger_match,
                     "reco_trigger_match/O");
 
-    fTree.push_back(newTree);
-    // add to the list
-    // mOutList->Add(newTree);
+    fTree.push_back(jetTree);
+
     currentDir->cd();
   }
 
@@ -112,17 +112,15 @@ void StPicoHFJetMaker::ClearJets(Option_t *opt = "") { return; }
 // _________________________________________________________
 int StPicoHFJetMaker::FinishJets() {
   TDirectory *currentDir = gDirectory;
-  TFile *file = currentDir->GetFile(); // get output file
-
   for (unsigned int i = 0; i < fTree.size(); i++) {
     TString dirName = Form("R_%.1f", fR[i]);
-    TDirectory *dir = (TDirectory *)file->Get(dirName);
+    TDirectory *dir = (TDirectory *)currentDir->Get(dirName);
     dir->cd();
     if (fTree[i]) {
       fTree[i]->Write();
     }
+    currentDir->cd();
   }
-  currentDir->cd();
 
   return kStOK;
 }
@@ -154,7 +152,6 @@ int StPicoHFJetMaker::MakeJets() {
     fCentrality = 7; // merge 60-70% and 70-80% into 60-80%
 
   float fDeltaR;
-  int fCentrality;
   float fCentralityWeight = mRefmultCorrUtil->weight();
 
   hcent->Fill(fCentrality, fCentralityWeight);
