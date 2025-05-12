@@ -27,13 +27,13 @@ make fragile-shared-install
 unset CXXFLAGS CFLAGS LDFLAGS
 
 # add FASTJET and FASTJET_CONTRIB to /.bashrc
-# export FASTJET=$install_dir/fastjet-install
-# export FASTJET_CONTRIB=$install_dir/fjcontrib-1.046
+export FASTJET=$install_dir/fastjet-install
+export FASTJET_CONTRIB=$install_dir/fjcontrib-1.046
+
 echo "export FASTJET='$install_dir/fastjet-install'" >> ~/.bashrc
 echo "export FASTJET_CONTRIB='$install_dir/fjcontrib-1.046'" >> ~/.bashrc
 source ~/.bashrc
 
 # add links to the current directory
 cd $current_dir
-ln -s $FASTJET/include/siscone siscone
 ln -s $FASTJET/include/fastjet fastjet
