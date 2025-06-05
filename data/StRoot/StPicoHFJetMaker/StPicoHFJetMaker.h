@@ -60,7 +60,7 @@ class StEmcDecoder;
 class StPicoHFJetMaker : public StPicoJetMaker {
 public:
   StPicoHFJetMaker(TString name, StPicoDstMaker *picoMaker,
-                   TString outputBaseFileName, TString inputHFListHFtree);
+                   TString outputBaseFileName);
   virtual ~StPicoHFJetMaker();
 
   virtual Int_t InitJets();

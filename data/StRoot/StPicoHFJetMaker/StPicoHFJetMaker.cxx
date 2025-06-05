@@ -34,9 +34,8 @@ vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
 ClassImp(StPicoHFJetMaker)
 
     StPicoHFJetMaker::StPicoHFJetMaker(TString name, StPicoDstMaker *picoMaker,
-                                       TString outputBaseFileName,
-                                       TString inputHFListHFtree = "")
-    : StPicoJetMaker(name, picoMaker, outputBaseFileName, inputHFListHFtree),
+                                       TString outputBaseFileName)
+    : StPicoJetMaker(name, picoMaker, outputBaseFileName),
       mRefmultCorrUtil(NULL) {
 
   // constructor
@@ -433,7 +432,6 @@ Bool_t StPicoHFJetMaker::GetCaloTrackMomentum(StPicoDst *mPicoDst,
   return true;
 }
 
-
 vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
                                        const vector<MyJet> &RecoJets,
                                        const double &R) {
@@ -443,22 +441,29 @@ vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
 
   for (const auto &mcJet : McJets) {
     bool isMatched = false;
-    // Try to find a matching reco jet
-    for (auto rcit = recoJetsCopy.begin(); rcit != recoJetsCopy.end();) {
+    double minDeltaR = 10000; // Initialize to a large value
+    auto bestMatch = recoJetsCopy.end();
+
+    // Find the closest reco jet within the threshold
+    for (auto rcit = recoJetsCopy.begin(); rcit != recoJetsCopy.end(); ++rcit) {
       MyJet recoJet = *rcit;
       double deltaR = mcJet.deltaR(recoJet);
 
-      if (deltaR < 0.6 * R) { // motivated by ALICE analysis, to be revised
-        matchedJets.push_back(make_pair(mcJet, recoJet));
+      if (deltaR < 0.6 * R && deltaR < minDeltaR) {
+        minDeltaR = deltaR;
+        bestMatch = rcit;
         isMatched = true;
-        rcit = recoJetsCopy.erase(rcit); // remove matched jet from recoJetsCopy
-        break;
-      } else // look further for the next reco jet
-        ++rcit;
+      }
     }
-    // If no match was found for this MC jet, record it as unmatched
-    if (!isMatched)
+
+    // If a match was found, add it and remove from available jets
+    if (isMatched) {
+      matchedJets.push_back(make_pair(mcJet, *bestMatch));
+      recoJetsCopy.erase(bestMatch);
+    } else {
+      // If no match was found for this MC jet, record it as unmatched
       matchedJets.push_back(make_pair(mcJet, dummy));
+    }
   }
 
   // Add the remaining unmatched reco jets

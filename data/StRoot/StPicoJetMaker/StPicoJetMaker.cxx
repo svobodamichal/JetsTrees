@@ -5,14 +5,12 @@ ClassImp(StPicoJetMaker)
     // _________________________________________________________
     // _________________________________________________________
     StPicoJetMaker::StPicoJetMaker(TString name, StPicoDstMaker *picoMaker,
-                                   TString outputBaseFileName,
-                                   TString inputHFListHFtree = "")
+                                   TString outputBaseFileName)
     : StMaker(name), mPicoDst(NULL), mBField(0.), mOutList(NULL),
       mMakerMode(StPicoJetMaker::kAnalyze), mMcMode(false),
       mOutputTreeName("picoHFtree"), mOutputFileBaseName(outputBaseFileName),
-      mInputFileName(inputHFListHFtree), mPicoDstMaker(picoMaker),
-      mPicoEvent(NULL), mTree(NULL), mOutputFileTree(NULL),
-      mOutputFileList(NULL) {
+      mPicoDstMaker(picoMaker), mPicoEvent(NULL), mTree(NULL),
+      mOutputFileTree(NULL), mOutputFileList(NULL) {
   // -- constructor
 }
 

@@ -1,33 +1,3 @@
-
-/* **************************************************
- *   Run StPicoHFMyAnaMaker in different modes
- * --------------------------------------------------
- * run as :
- *  root -l -b -q StRoot/macros/loadSharedHFLibraries.C
- * StRoot/macros/runPicoHFMyAnaMaker.C++ or root -l -b -q
- * StRoot/macros/runPicoHFMyAnaMaker.C
- *
- * --------------------------------------------------
- *  - Different modes to use the  class
- *    - StPicoJetMaker::kAnalyze - don't write candidate trees, just fill
- * histograms inputFile : fileList of PicoDst files or single picoDst file
- *        outputFile: baseName for outfile
- *    - StPicoJetMaker::kWrite   - write candidate trees
- *        inputFile : path to single picoDist file
- *        outputFile: baseName for outfile
- *    - StPicoJetMaker::kRead    - read candidate trees and fill histograms
- *        inputFile : fileList of PicoDst files
- *        outputFile: baseName for outfile
- *
- * --------------------------------------------------
- *  Authors:  Xin Dong        (xdong@lbl.gov)
- *            Michael Lomnitz (mrlomnitz@lbl.gov)
- *            Mustafa Mustafa (mmustafa@lbl.gov)
- *            Jochen Thaeder  (jmthader@lbl.gov)
- *
- * **************************************************
- */
-
 #ifndef __CINT__
 #include "TChain.h"
 #include "TROOT.h"
@@ -120,7 +90,7 @@ void runPicoHFJetMaker(
   St_db_Maker *dbMaker = new St_db_Maker("StarDb", "MySQL:StarDb");
   StEmcADCtoEMaker *adc = new StEmcADCtoEMaker();
   StPicoHFJetMaker *stPicoHFJetMaker =
-      new StPicoHFJetMaker("stPicoHFJetMaker", picoDstMaker, outputFile, "");
+      new StPicoHFJetMaker("jetTree", picoDstMaker, outputFile);
 
   stPicoHFJetMaker->setMakerMode(makerMode);
   stPicoHFJetMaker->setTreeName(treeName);
@@ -131,7 +101,6 @@ void runPicoHFJetMaker(
 
   // ---------------------------------------------------
   // -- Set Base cuts for HF analysis
-
   // -- File name of bad run list
   picoCuts->setBadRunListFileName(badRunListFileName);
   // -- ADD USER CUTS HERE ----------------------------
@@ -141,7 +110,6 @@ void runPicoHFJetMaker(
   picoCuts->setCutRefMult(0, 100000);
 
   // 2014 MB HFT triggers
-
   // picoCuts->addTriggerId(450050);    // vpdmb-5-p-nobsmd-hlt
   // picoCuts->addTriggerId(450060);    // vpdmb-5-p-nobsmd-hlt
   // picoCuts->addTriggerId(450005);    // vpdmb-5-p-nobsmd
@@ -206,7 +174,6 @@ void runPicoHFJetMaker(
   stPicoHFJetMaker->setTriggerThreshold(
       18); //~4.2 GeV is the HT2 threshold = 18 ADC
   stPicoHFJetMaker->setMaxNeutralFraction(0.95); // default
-  // stPicoHFJetMaker->setMaxNeutralFraction(95); //turn off for neutral jets
   stPicoHFJetMaker->setMaxDcaZHadronCorr(
       3.0); // cm, max DCA_z for global tracks used for hadronic correction
 

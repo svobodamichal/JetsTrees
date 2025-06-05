@@ -23,7 +23,7 @@
 class StPicoJetMaker : public StMaker {
 public:
   StPicoJetMaker(TString name, StPicoDstMaker *picoMaker,
-                 TString outputBaseFileName, TString inputHFListHFtree);
+                 TString outputBaseFileName);
   virtual ~StPicoJetMaker();
 
   // -- TO BE IMPLEMENTED BY DAUGHTER CLASS
@@ -75,8 +75,6 @@ private:
   void fillEventStats(int *aEventStat);
 
   // -- private members ------------------------
-
-  TString mInputFileName; //! *.list - MuDst or picoDst  //Jana
 
   unsigned int mMakerMode; // use enum of StPicoEventMaker::eMakerMode
   bool mMcMode;            // use MC mode
