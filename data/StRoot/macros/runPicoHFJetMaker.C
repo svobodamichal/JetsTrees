@@ -111,21 +111,6 @@ void runPicoHFJetMaker(
     exit(1);
   }
 
-  if (makerMode == StPicoJetMaker::kAnalyze) {
-    if (!inputFile.Contains(".list") && !inputFile.Contains("picoDst.root")) {
-      cout << "No input list or picoDst root file provided! Exiting..." << endl;
-      exit(1);
-    }
-  } else if (makerMode == StPicoJetMaker::kWrite) {
-    if (!inputFile.Contains("picoDst.root")) {
-      cout << "No input picoDst root file provided! Exiting..." << endl;
-      exit(1);
-    }
-  } else {
-    cout << "Unknown makerMode! Exiting..." << endl;
-    exit(1);
-  }
-
   StMessMgr *msg = StMessMgr::Instance();
   msg->SwitchOff("Could not make BEMC detector");
 
@@ -149,10 +134,6 @@ void runPicoHFJetMaker(
 
   // -- File name of bad run list
   picoCuts->setBadRunListFileName(badRunListFileName);
-
-  // -- File name of hot tower list
-  // picoCuts->setHotTowerListFileName(hotTowerListFileName);
-
   // -- ADD USER CUTS HERE ----------------------------
   picoCuts->setCutVzMax(30.);
   picoCuts->setCutVzVpdVzMax(3.);
@@ -221,15 +202,11 @@ void runPicoHFJetMaker(
   stPicoHFJetMaker->setCutETmin(0.2);
   stPicoHFJetMaker->setNJetsRemove(1);
   stPicoHFJetMaker->setR_bg(0.3);
-
   stPicoHFJetMaker->setHadronCorr(1.0);
-
   stPicoHFJetMaker->setTriggerThreshold(
       18); //~4.2 GeV is the HT2 threshold = 18 ADC
-
   stPicoHFJetMaker->setMaxNeutralFraction(0.95); // default
   // stPicoHFJetMaker->setMaxNeutralFraction(95); //turn off for neutral jets
-
   stPicoHFJetMaker->setMaxDcaZHadronCorr(
       3.0); // cm, max DCA_z for global tracks used for hadronic correction
 
@@ -253,7 +230,9 @@ void runPicoHFJetMaker(
   }
 
   for (unsigned int pt_name = 0; pt_name < pt_bins_name.size(); pt_name++) {
-    if (headFile.Contains(pt_bins_name[pt_name].Data())) {
+    if (outputFile.Contains(pt_bins_name[pt_name].Data()) ||
+        headFile.Contains(pt_bins_name[pt_name].Data()) ||
+        inputFile.Contains(pt_bins_name[pt_name].Data())) {
       pThatmin = pt_bins[pt_name];
       pThatmax = pt_bins[pt_name + 1];
       xsecWeight = weights[pt_name];
@@ -266,31 +245,53 @@ void runPicoHFJetMaker(
     cout << "No pThat range found! Exiting..." << endl;
     exit(1);
   }
+
   stPicoHFJetMaker->setMCparameters(pThatmin, pThatmax, xsecWeight);
 
-  StRefMultCorr *grefmultCorrUtil =
-      CentralityMaker::instance()
-          ->getRefMultCorr_P18ih_VpdMB30_MidLow(); // new StRefMultCorr, info
-                                                   // about Run14
-  stPicoHFJetMaker->setRefMultCorr(grefmultCorrUtil);
+  // Also add protection for StRefMultCorr
+  StRefMultCorr *grefmultCorrUtil;
+  try {
+    grefmultCorrUtil =
+        CentralityMaker::instance()->getRefMultCorr_P18ih_VpdMB30_MidLow();
+    if (grefmultCorrUtil) {
+      stPicoHFJetMaker->setRefMultCorr(grefmultCorrUtil);
+      cout << "RefMultCorr set successfully" << endl;
+    } else {
+      cout << "WARNING: RefMultCorr is null, skipping..." << endl;
+    }
+  } catch (...) {
+    cout << "ERROR: Exception when getting RefMultCorr" << endl;
+  }
 
   // ========================================================================================
 
   chain->Init();
-  long int nEvents = picoDstMaker->chain()->GetEntries();
-  //  int nEvents = 10000;
-  // if(nEvents>total) nEvents = total;
+  if (!picoDstMaker->chain()) {
+    cout << "ERROR: Chain is null. Exiting..." << endl;
+    return;
+  }
+
+  long int nEvents = 0;
+
+  try {
+    nEvents = picoDstMaker->chain()->GetEntries();
+    cout << "Number of events in chain: " << nEvents << endl;
+  } catch (...) {
+    cout << "ERROR: Failed to get number of entries from chain!" << endl;
+    return;
+  }
+
   for (Int_t i = 0; i < nEvents; i++) {
-    // if(i%10000 == 0) cout << "Working on eventNumber " << i << endl;
+    // Inside the event loop
+    if (i % 100 == 0)
+      cout << "Processing event " << i << "/" << nEvents << endl;
+
     chain->Clear();
     int iret = chain->Make(i);
-
     if (iret) {
-      cout << "Bad return code!" << iret << endl;
+      cout << "Bad return code! " << iret << " at event " << i << endl;
       break;
     }
-    // cout << "Evt. no. " << i << endl;
-    // total++;
   }
   cout << "****************************************** " << endl;
   cout << "Work done... now its time to close up shop!" << endl;

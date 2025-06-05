@@ -70,7 +70,6 @@ public:
   virtual Double_t GetTowerCalibEnergy(Int_t TowerId);
   virtual Double_t vertexCorrectedEta(double eta, double vz);
   virtual Bool_t GetCaloTrackMomentum(StPicoDst *mPicoDst, TVector3 mPrimVtx);
-  virtual Int_t FindTriggerTowers(Int_t level);
 
   int SetHighTowerVar(StMcTrack *mcTrack, bool isele);
 
@@ -80,7 +79,6 @@ public:
   void setEmbPythia(bool kEmbPythia);
 
   void setR(vector<float> &fR);
-  void setAcuts(vector<float> &fAcuts);
 
   void setGhostMaxrap(float fGhostMaxrap);
 
@@ -121,7 +119,6 @@ private:
   int fRunNumber;
 
   vector<float> fR;
-  vector<float> fAcuts;
 
   bool kEmbPythia;
 
@@ -174,10 +171,6 @@ inline void StPicoHFJetMaker::setEmbPythia(bool kEmbPythia) {
 
 inline void StPicoHFJetMaker::setR(vector<float> &fR) {
   StPicoHFJetMaker::fR = fR;
-}
-
-inline void StPicoHFJetMaker::setAcuts(vector<float> &fAcuts) {
-  StPicoHFJetMaker::fAcuts = fAcuts;
 }
 
 inline void StPicoHFJetMaker::setR_bg(float fR_bg) {

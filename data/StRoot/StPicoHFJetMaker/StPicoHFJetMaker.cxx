@@ -49,6 +49,7 @@ StPicoHFJetMaker::~StPicoHFJetMaker() {
 
 // _________________________________________________________
 int StPicoHFJetMaker::InitJets() {
+
   mADCtoEMaker = dynamic_cast<StEmcADCtoEMaker *>(GetMaker("Eread"));
   assert(mADCtoEMaker);
   mTables = mADCtoEMaker->getBemcData()->getTables();
@@ -192,8 +193,7 @@ int StPicoHFJetMaker::MakeJets() {
   GetCaloTrackMomentum(mPicoDst, mPrimVtx); // fill array Sump with momenta of
                                             // tracks which are matched to BEMC
 
-  StEmcPosition *mEmcPosition;
-  mEmcPosition = new StEmcPosition();
+  StEmcPosition *mEmcPosition = new StEmcPosition();
 
   double TOWE = 0;
   for (int iTow = 0; iTow < 4800; iTow++) { // get btow info
@@ -282,7 +282,7 @@ int StPicoHFJetMaker::MakeJets() {
   fullTracks.insert(
       fullTracks.end(), jetTracks.begin(),
       jetTracks.end()); // commenting this line will cause only neutral jets,
-                        // MAX NEUTRAL FRACTION HAS TO BE TURNED OFF
+  // MAX NEUTRAL FRACTION HAS TO BE TURNED OFF
 
   //==================================================================================//
   // Jet part
@@ -350,8 +350,9 @@ int StPicoHFJetMaker::MakeJets() {
       fRecoJet = MatchedJets[j].second;
       fDeltaR = fMcJet.deltaR(fRecoJet);
       fTree[i]->Fill();
-    }
-  }
+    } // end loop over matched jets
+
+  } // end loop over R
 
   Sump.fill(0);
   Triggers.clear();
@@ -432,34 +433,6 @@ Bool_t StPicoHFJetMaker::GetCaloTrackMomentum(StPicoDst *mPicoDst,
   return true;
 }
 
-Int_t StPicoHFJetMaker::FindTriggerTowers(Int_t level = 2) {
-
-  if (level < 1 || level > 3) {
-    cout << "Wrong trigger level, this function cannot be used" << endl;
-    return -1;
-  }
-
-  UInt_t ntrg = mPicoDst->numberOfEmcTriggers();
-  for (int i = 0; i < ntrg; i++) { // get btow info
-    StPicoEmcTrigger *trg = mPicoDst->emcTrigger(i);
-    if (!trg) { /*cout << "no trigger info" << endl;*/
-      continue;
-    }
-    if ((level == 2 && !trg->isHT2()) || (level == 1 && !trg->isHT1()) ||
-        (level == 3 && !trg->isHT3())) { /*cout << "not HT2 trigger" << endl;*/
-      continue;
-    }
-    int towid = trg->id();
-    if (BadTowerMap[towid])
-      continue;
-    float energy = GetTowerCalibEnergy(towid);
-    float ADC = mPicoDst->btowHit(towid - 1)->adc();
-    if (ADC > fTrgthresh)
-      Triggers.push_back(towid);
-  }
-
-  return Triggers.size();
-}
 
 vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
                                        const vector<MyJet> &RecoJets,

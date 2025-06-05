@@ -3,6 +3,10 @@
 baseFolder="$PWD"
 # -- listOfFiles
 listOfFiles="$PWD/$1"
+# listOfFiles=/gpfs01/star/pwg/prozorov/jets_AuAu_2014/JetsTrees/data/filelists/testPythia6picoDsts_pt50_-1.list
+# strip BASENAME from the path without the extension
+pt_hat=$(basename "${listOfFiles}" .list)
+
 # -- tree name
 treeName="jetTree"
 # -- root macro
@@ -32,7 +36,7 @@ cd "${baseFolder}/submit/${productionId}/job"
 mkdir -p report err log list csh
 
 # -- check for prerequisites and create links
-folders=(".sl73_gcc485" "StRoot")
+folders=(".sl73_x8664_gcc485" "StRoot")
 
 echo -n "Checking prerequisites folders ...  "
 for folder in "${folders[@]}"; do
@@ -101,9 +105,11 @@ cat <<EOF >"${generatedXml}"
 <!ENTITY listOfFiles "${listOfFiles}">
 <!ENTITY starVersion "${starVersion}">
 <!ENTITY maxNFiles "${maxNFiles}">
+<!ENTITY pt_hat "${pt_hat}">
 ]>
 EOF
 # -- add the rest of the xml file except the first line <?xml version="1.0" encoding="utf-8" ?>
 tail -n +2 "${templateXml}" >>"${generatedXml}"
 
-star-submit-beta "${generatedXml}"
+star-submit "${generatedXml}"
+# star-submit-beta "${generatedXml}"
