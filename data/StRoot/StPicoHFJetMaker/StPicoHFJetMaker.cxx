@@ -354,7 +354,6 @@ int StPicoHFJetMaker::MakeJets() {
   } // end loop over R
 
   Sump.fill(0);
-  Triggers.clear();
   return kStOK;
 }
 

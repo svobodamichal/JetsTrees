@@ -3,10 +3,8 @@
 baseFolder="$PWD"
 # -- listOfFiles
 listOfFiles="$PWD/$1"
-# listOfFiles=/gpfs01/star/pwg/prozorov/jets_AuAu_2014/JetsTrees/data/filelists/testPythia6picoDsts_pt50_-1.list
-# strip BASENAME from the path without the extension
-pt_hat=$(basename "${listOfFiles}" .list)
-
+# strip BASENAME from the path without the extension to get filelist_name range
+filelist_name=$(basename "${listOfFiles}" .list)
 # -- tree name
 treeName="jetTree"
 # -- root macro
@@ -14,98 +12,61 @@ rootMacro="runPicoHFJetMaker.C"
 # -- bad run list file
 badRunListFileName="BadRunList_14.list"
 # -- production Id
-productionId=$(date +%F_%H-%M)
+productionId=$(date +%F_%H)
 # -- set STAR software version
 starVersion="pro"
 # --max number of files
-maxNFiles=1
+maxNFiles=100
 
 #================================================================
 # -- submission xml file
 templateXml="template.xml"
 
+jobFolder="${baseFolder}/submit/${productionId}/job_${filelist_name}"
 # -- job submission directory
-mkdir -p "${baseFolder}/submit/${productionId}/job"
-
-# -- result directory
-mkdir -p "${baseFolder}/submit/${productionId}/production"
-
-cd "${baseFolder}/submit/${productionId}/job"
-
+mkdir -p "${jobFolder}"
+cd "${jobFolder}"
 # -- prepare folder
-mkdir -p report err log list csh
+mkdir -p report err log list csh production
 
-# -- check for prerequisites and create links
-folders=(".sl73_x8664_gcc485" "StRoot")
+check=(
+    ".sl73_x8664_gcc485" # dirs
+    "StRoot"
+    "StRoot/macros/${rootMacro}" # run macro
+    "submit/${templateXml}"      # xml template
+    "${badRunListFileName}"      # bad-run list
+)
 
-echo -n "Checking prerequisites folders ...  "
-for folder in "${folders[@]}"; do
-    if [ ! -d "${baseFolder}/${folder}" ]; then
-        echo "${folder} does not exist in ${baseFolder}"
+printf "Checking project … "
+for item in "${check[@]}"; do
+    path="${baseFolder}/${item}"
+    [[ -e $path ]] || {
+        echo "$item missing"
         exit 1
-    else
-        ln -sf "${baseFolder}/${folder}"
-    fi
+    }
+    [[ -d $path || $item == *.xml || $item == "$badRunListFileName" ]] && ln -sf "$path"
 done
-echo "ok"
-
-# -- check for run macro
-echo -n "Checking run macro ...             "
-if [ ! -e "${baseFolder}/StRoot/macros/${rootMacro}" ]; then
-    echo "${rootMacro} does not exist in ${baseFolder}/StRoot/macros"
+[[ -e $listOfFiles ]] || {
+    echo "$listOfFiles missing"
     exit 1
-fi
+}
 echo "ok"
-
-# -- check for xml file
-echo -n "Checking xml file  ...             "
-if [ ! -e "${baseFolder}/submit/${templateXml}" ]; then
-    echo "XML ${templateXml} does not exist"
-    exit 1
-else
-    ln -sf "${baseFolder}/submit/${templateXml}"
-fi
-echo "ok"
-
-# -- check for bad run list
-echo -n "Checking bad run list  ...         "
-if [ -e "${baseFolder}/${badRunListFileName}" ]; then
-    cp "${baseFolder}/${badRunListFileName}" BadRunList_14.list
-elif [ -e "${baseFolder}/picoLists/${badRunListFileName}" ]; then
-    cp "${baseFolder}/picoLists/${badRunListFileName}" BadRunList_14.list
-else
-    echo "${badRunListFileName} does not exist in ${baseFolder} nor ${baseFolder}/picoLists"
-    exit 1
-fi
-echo "ok"
-
-# -- check listOfFiles file list
-echo -n "Checking listOfFiles file list ...       "
-if [ ! -e "${listOfFiles}" ]; then
-    echo "Filelist ${listOfFiles} does not exist"
-    exit 1
-fi
-
-# -- cleanup old local packages
-[ -e LocalLibraries.zip ] && rm LocalLibraries.zip
-[ -d LocalLibraries.package ] && rm -rf LocalLibraries.package
 
 # -- submit
-generatedXml="generated.xml"
-[ -e "${generatedXml}" ] && rm "${generatedXml}"
+generatedXml="generated_${filelist_name}.xml"
 
 cat <<EOF >"${generatedXml}"
 <?xml version="1.0" encoding="utf-8" ?>
 <!DOCTYPE note [
 <!ENTITY rootMacro "${rootMacro}">
 <!ENTITY treeName "${treeName}">
-<!ENTITY productionId "${productionId}">
 <!ENTITY baseFolder "${baseFolder}">
+<!ENTITY jobFolder "${jobFolder}">
 <!ENTITY badRunListFileName "${badRunListFileName}">
 <!ENTITY listOfFiles "${listOfFiles}">
 <!ENTITY starVersion "${starVersion}">
 <!ENTITY maxNFiles "${maxNFiles}">
-<!ENTITY pt_hat "${pt_hat}">
+<!ENTITY filelist_name "${filelist_name}">
 ]>
 EOF
 # -- add the rest of the xml file except the first line <?xml version="1.0" encoding="utf-8" ?>

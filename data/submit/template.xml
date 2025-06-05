@@ -3,8 +3,8 @@
 
   <!-- <shell>singularity exec -e -B /direct -B /star -B /afs -B /gpfs -B /sdcc/lustre02 /cvmfs/star.sdcc.bnl.gov/containers/rhic_sl7.sif</shell> -->
 
-  <stdout URL="file:&baseFolder;/submit/&productionId;/job/log/$JOBID.out"/>
-  <stderr URL="file:&baseFolder;/submit/&productionId;/job/err/$JOBID.err"/>
+  <stdout URL="file:&jobFolder;/log/$JOBID.out"/>
+  <stderr URL="file:&jobFolder;/err/$JOBID.err"/>
 
   <input URL="filelist:&listOfFiles;" />
 
@@ -16,12 +16,12 @@
 
   <command>
     setup 64b
-    root4star -l -b -q StRoot/macros/&rootMacro;\(\"$FILELIST\",\"&pt_hat;_$JOBINDEX\"\) 
-                    <!-- &gt;&amp; ${JOBID}.log -->
+    starver &starVersion;
+    root4star -l -b -q StRoot/macros/&rootMacro;\(\"$FILELIST\",\"&filelist_name;_$JOBINDEX\"\) &gt;&amp; ${JOBID}.log
   </command>
 
-  <output fromScratch="*.root" toURL="&baseFolder;/submit/&productionId;/production/" />
-  <!-- <output fromScratch="*.log" toURL="&baseFolder;/submit/&productionId;/job/log/" /> -->
+  <output fromScratch="*.root" toURL="&jobFolder;/production/" />
+  <output fromScratch="*.log" toURL="&jobFolder;/log/" />
 
 
   <SandBox installer="ZIP">
