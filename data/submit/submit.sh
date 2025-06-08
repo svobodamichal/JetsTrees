@@ -12,7 +12,7 @@ rootMacro="runPicoHFJetMaker.C"
 # -- bad run list file
 badRunListFileName="BadRunList_14.list"
 # -- production Id
-productionId=$(date +%F_%H)
+productionId=$(date +%F)
 # -- set STAR software version
 starVersion="pro"
 # --max number of files
