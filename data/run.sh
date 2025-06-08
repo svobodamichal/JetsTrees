@@ -1,5 +1,5 @@
 #!/bin/bash
-productionId=$(date +%F_%H)
+productionId=$(date +%F)
 # delete old production directory if exists
 
 if [[ -d "submit/${productionId}" ]]; then
