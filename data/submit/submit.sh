@@ -12,7 +12,7 @@ rootMacro="runPicoHFJetMaker.C"
 # -- bad run list file
 badRunListFileName="BadRunList_14.list"
 # -- production Id
-productionId=$(date +%F_%H)
+productionId=$(date +%F)
 # -- set STAR software version
 starVersion="pro"
 # --max number of files
@@ -68,6 +68,7 @@ cat <<EOF >"${generatedXml}"
 <!ENTITY maxNFiles "${maxNFiles}">
 <!ENTITY filelist_name "${filelist_name}">
 ]>
+
 EOF
 # -- add the rest of the xml file except the first line <?xml version="1.0" encoding="utf-8" ?>
 tail -n +2 "${templateXml}" >>"${generatedXml}"

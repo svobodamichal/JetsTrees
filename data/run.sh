@@ -1,11 +1,4 @@
 #!/bin/bash
-productionId=$(date +%F_%H)
-# delete old production directory if exists
-
-if [[ -d "submit/${productionId}" ]]; then
-    echo "deleting old production directory"
-    rm -rf "submit/${productionId}"
-fi
 
 filelists=(
     "filelists/embedding/pt3_5.list"
@@ -27,3 +20,5 @@ for list_file in "${filelists[@]}"; do
         exit 1
     fi
 done
+
+
