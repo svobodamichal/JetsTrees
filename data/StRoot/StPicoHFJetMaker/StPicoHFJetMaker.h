@@ -157,7 +157,7 @@ private:
   float bemcEnergy[4801];
   int bemcADC[4801];
 
-  array<float, 4800> Sump;
+  float Sump[4800];
 
   StEmcDecoder *mEmcDecoder;
   StBemcTables *mBemcTables;
