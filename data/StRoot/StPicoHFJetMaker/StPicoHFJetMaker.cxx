@@ -353,7 +353,9 @@ int StPicoHFJetMaker::MakeJets() {
 
   } // end loop over R
 
-  Sump.fill(0);
+  for (int i = 0; i < 4800; i++) {
+  Sump[i] = 0.0; // reset Sump array
+  }
   return kStOK;
 }
 
