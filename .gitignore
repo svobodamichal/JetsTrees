@@ -21,7 +21,7 @@ trees/job*
 .sl73_x8664_gcc485/
 *.package/
 *.zip
-
+*.sif
 # Container
 analysis/unfolding/roounfold.sif
 
