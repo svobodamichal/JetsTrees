@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # --- edit these three if your layout changes ---
-BASE="/gpfs/mnt/gpfs01/star/pwg/svomich/JetsTrees"
+BASE="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees"
 SIF="/gpfs/mnt/gpfs01/star/pwg/prozorov/singularity/roounfold.sif"
-MACRO="/gpfs/mnt/gpfs01/star/pwg/svomich/JetsTrees/analysis/unfolding/unfold.cxx"
+MACRO="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees/analysis/unfolding/unfold.cxx"
 # ----------------------------------------------
 
 IN="${1:-$BASE/trees/merged_all/embedding_merged.root}"
