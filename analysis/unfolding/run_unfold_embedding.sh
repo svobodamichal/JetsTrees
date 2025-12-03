@@ -9,7 +9,7 @@ set -euo pipefail
 BASE="/gpfs/mnt/gpfs01/star/pwg/svomich/JetsTrees"
 
 SIF="${BASE}/analysis/unfolding/roounfold.sif"
-MACRO="${BASE}/analysis/unfolding/unfold.cxx"
+MACRO="${BASE}/analysis/unfolding/unfold_embedding.cxx"
 
 ########################
 # Arguments
@@ -27,7 +27,7 @@ else
 fi
 
 # 2nd arg: output directory (default: analysis/unfolding/out under BASE)
-OUT_DIR="${2:-${BASE}/analysis/unfolding/out}"
+OUT_DIR="${2:-${BASE}/analysis/unfolding/out_embedding}"
 
 ########################
 # Checks

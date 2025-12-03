@@ -9,6 +9,7 @@
 #include "TCanvas.h"
 #include "TSystem.h"
 #include "TStyle.h"
+#include "TMatrixD.h"
 
 #include <vector>
 #include <string>
@@ -37,11 +38,13 @@ static const double bin_truth_edges[nbins_truth+1] = {
 };
 
 // same centrality & R labels as before
-static const vector<string> kCentralities = {"CENT_0_10", "MID_20_40", "PERI_60_80"};
-static const vector<string> kRadii        = {"R0.2", "R0.3", "R0.4"};
+static const vector<string> kCentralities =
+  {"CENT_0_10", "MID_20_40", "PERI_60_80"};
+static const vector<string> kRadii =
+  {"R0.2", "R0.3", "R0.4"};
 
 // pt_lead cuts (same as in closure)
-static const double kPtLeadCuts[] = {0.0, 5.0, 7.0};
+static const double kPtLeadCuts[] = {0.0, 5.0, 7.0, 9.0};
 static const int    kNPtLeadCuts  = sizeof(kPtLeadCuts)/sizeof(kPtLeadCuts[0]);
 
 // ------------------ jet-quality cuts -------------------------
@@ -59,15 +62,16 @@ static void EnsureDir(const string& path){
 }
 
 /**
- * dataFile      : real data jets (with JetTree)
- * responseDir   : directory where you stored unfold_response_*.root
- * outDir        : where unfolded data spectra will be written
- * nIter         : Bayes iterations (default 4)
+ * dataFile     : real data jets (with JetTree)
+ * responseFile : single ROOT file containing per-tag directories:
+ *                R*_CENT_*_ptlead* / { response, hPrior, ... }
+ * outDir       : where unfolded data ROOT file will be written
+ * nIter        : Bayes iterations (default 4)
  */
 void unfold_data(const char* dataFile,
-                 const char* responseDir,
+                 const char* responseFile,
                  const char* outDir,
-                 int nIter = kBayesIterDefault)
+                 int nIter /* = kBayesIterDefault */)
 {
   gStyle->SetOptStat(0);
   EnsureDir(outDir);
@@ -78,14 +82,32 @@ void unfold_data(const char* dataFile,
     return;
   }
 
+  TFile* fRespAll = TFile::Open(responseFile, "READ");
+  if (!fRespAll || fRespAll->IsZombie()) {
+    cout << "[error] Cannot open response file: " << responseFile << endl;
+    fData->Close(); delete fData;
+    return;
+  }
+
+  const string outRootPath = string(outDir) + "/unfolded_data.root";
+  TFile* fOutAll = TFile::Open(outRootPath.c_str(), "RECREATE");
+  if (!fOutAll || fOutAll->IsZombie()) {
+    cout << "[error] Cannot create output file: " << outRootPath << endl;
+    fRespAll->Close(); delete fRespAll;
+    fData->Close();   delete fData;
+    return;
+  }
+
   cout << "\n=== Unfolding real data ===\n";
   cout << "  Data file     : " << dataFile << "\n";
-  cout << "  Response dir  : " << responseDir << "\n";
-  cout << "  Output dir    : " << outDir << "\n";
+  cout << "  Response file : " << responseFile << "\n";
+  cout << "  Output file   : " << outRootPath << "\n";
   cout << "  Bayes iters   : " << nIter << "\n\n";
 
   // loop R, centrality, ptlead
-  for (const auto& R : kRadii) {
+  for (size_t iR = 0; iR < kRadii.size(); ++iR) {
+    const string R = kRadii[iR];
+
     // choose area cut from R
     double Rval = 0.0;
     if (sscanf(R.c_str(), "R%lf", &Rval) != 1) {
@@ -97,7 +119,8 @@ void unfold_data(const char* dataFile,
     else if (Rval < 0.35) areaMin = CUT_AREA_03;
     else                  areaMin = CUT_AREA_04;
 
-    for (const auto& C : kCentralities) {
+    for (size_t iC = 0; iC < kCentralities.size(); ++iC) {
+      const string C = kCentralities[iC];
 
       const string treePath = R + "/" + C + "/JetTree";
       TTree* tr = dynamic_cast<TTree*>(fData->Get(treePath.c_str()));
@@ -119,7 +142,7 @@ void unfold_data(const char* dataFile,
       tr->SetBranchStatus("reco_neutral_fraction", 1);
 
       float reco_pt_corr=0, reco_pt_lead=0;
-      bool  reco_trigger_match=false;
+      Bool_t reco_trigger_match=kFALSE;
       float centralityWeight=1.0f, xsecWeight=1.0f;
       float reco_area=0.0f, reco_neutral_fraction=0.0f;
 
@@ -170,42 +193,38 @@ void unfold_data(const char* dataFile,
         cout << "\n    data integral = " << hMeasData->Integral(0,-1) << endl;
 
         // ---------------- load response & prior ----------------
-        const string respPath =
-          string(responseDir) + "/unfold_response_" + tagfile + ".root";
-        TFile* fResp = TFile::Open(respPath.c_str(), "READ");
-        if (!fResp || fResp->IsZombie()) {
-          cout << "    [ERROR] cannot open response file: " << respPath
-               << "  --> skipping this tag\n";
+        TDirectory* dResp =
+          dynamic_cast<TDirectory*>(fRespAll->Get(tagfile.c_str()));
+        if (!dResp) {
+          cout << "    [ERROR] no directory '" << tagfile
+               << "' in response file --> skipping this tag\n";
           delete hMeasData;
-          if (fResp) { fResp->Close(); delete fResp; }
           continue;
         }
 
-        // response object name must match what you saved in closure macro
-        const string respName = "response_" + tag;
-        RooUnfoldResponse* response =
-          dynamic_cast<RooUnfoldResponse*>(fResp->Get(respName.c_str()));
+        //   response      -> "response"
+        //   prior (TH1D)  -> "hPrior"
+        RooUnfoldResponse* response = 0;
+        dResp->GetObject("response", response);
         if (!response) {
-          cout << "    [ERROR] cannot find RooUnfoldResponse '" << respName
-               << "' in " << respPath << " --> skipping\n";
+          cout << "    [ERROR] object 'response' not found in dir "
+               << tagfile << " --> skipping\n";
           delete hMeasData;
-          fResp->Close(); delete fResp;
           continue;
         }
 
-        // prior: reuse same explicit prior as in closure (for consistency)
-        const string priorName = "hPrior_" + tag;
-        TH1D* hPrior = dynamic_cast<TH1D*>(fResp->Get(priorName.c_str()));
+        TH1D* hPrior = 0;
+        dResp->GetObject("hPrior", hPrior);
         if (!hPrior) {
-          cout << "    [WARN] prior '" << priorName
-               << "' not found, using internal response prior instead.\n";
+          cout << "    [WARN] 'hPrior' not found in dir " << tagfile
+               << " (will use default prior from response)\n";
         }
 
         // ---------------- run unfolding ----------------
         cout << "    running RooUnfoldBayes with " << nIter << " iterations\n";
         RooUnfoldBayes unfold(response, hMeasData, nIter,
                               /*smoothit=*/false,
-                              hPrior); // may be null, RooUnfold handles it
+                              hPrior); // may be 0, RooUnfold handles it
 
         TH1D* hUnfoldedRecoBins = (TH1D*)unfold.Hunfold(); // reco-binning
         hUnfoldedRecoBins->SetName(Form("UnfoldedRecoBins_%s", tag.c_str()));
@@ -222,35 +241,40 @@ void unfold_data(const char* dataFile,
              << hUnfoldedTruthBins->Integral(0,-1) << endl;
 
         // ---------------- save to output file ----------------
-        const string outPath =
-          string(outDir) + "/unfolded_data_" + tagfile + ".root";
-        TFile* fout = TFile::Open(outPath.c_str(), "RECREATE");
-        if (!fout || fout->IsZombie()) {
-          cout << "    [ERROR] cannot create output file: " << outPath << endl;
-        } else {
-          hMeasData->Write("hMeasData");
-          hUnfoldedRecoBins->Write("hUnfoldedRecoBins");
-          hUnfoldedTruthBins->Write("hUnfoldedTruthBins");
+        TDirectory* dOut = fOutAll->mkdir(tagfile.c_str());
+        if (!dOut) dOut = fOutAll->GetDirectory(tagfile.c_str());
+        dOut->cd();
 
-          // optional: save covariance
-          TMatrixD cov = unfold.Eunfold(RooUnfold::kCovariance);
-          cov.Write("covariance");
+        hMeasData->Write("hMeasData");
+        hUnfoldedRecoBins->Write("hUnfoldedRecoBins");
+        hUnfoldedTruthBins->Write("hUnfoldedTruthBins");
 
-          fout->Close();
-          cout << "    wrote unfolded spectra to: " << outPath << endl;
-        }
+        // optional: save covariance matrix
+        TMatrixD cov = unfold.Eunfold(RooUnfold::kCovariance);
+        cov.Write("covariance");
+
+        cout << "    wrote unfolded spectra into directory '"
+             << tagfile << "' in " << outRootPath << endl;
 
         // cleanup
         delete hMeasData;
         delete hUnfoldedRecoBins;
         delete hUnfoldedTruthBins;
-        fResp->Close(); delete fResp;
       } // ptlead cuts
     } // centralities
   } // radii
 
+  fOutAll->Write();
+  fOutAll->Close();
+  delete fOutAll;
+
+  fRespAll->Close();
+  delete fRespAll;
+
   fData->Close();
   delete fData;
 
-  cout << "\nAll done. Unfolded data written to: " << outDir << endl;
+  cout << "\nAll done. Unfolded data written to: "
+       << outRootPath << "\n";
 }
+

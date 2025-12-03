@@ -80,11 +80,6 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                   << " (R = " << R << ", dRmax = " << dRmax
                   << ", areaMin = " << areaMin << ")" << std::endl;
 
-        // Create corresponding R-dir in output file
-        fout->cd();
-        TDirectory *outR = fout->mkdir(rname.c_str());
-        if (!outR) outR = fout->GetDirectory(rname.c_str());
-
         // Loop over centrality subdirs
         TIter nextC(dirR->GetListOfKeys());
         TKey *keyC = 0;
@@ -151,12 +146,6 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
             tree->SetBranchAddress("xsecWeight",       &xsecWeight);
             tree->SetBranchAddress("centralityWeight", &centralityWeight);
 
-            // --- Prepare output directory for this centrality ---
-            outR->cd();
-            TDirectory *outC = outR->mkdir(cname.c_str());
-            if (!outC) outC = outR->GetDirectory(cname.c_str());
-            outC->cd();
-
             // binning
             const Int_t    nbins_mc  = 600;
             const Double_t xmin_mc   = 0.0;
@@ -179,54 +168,46 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
             TH1D *h_pur_num  [N_LEAD_THR];
             TH1D *h_pur_eff  [N_LEAD_THR];
 
+            TDirectory* outTag[N_LEAD_THR] = {0};
+
             // --- Book histograms for each pT_lead threshold ---
             for (int it = 0; it < N_LEAD_THR; ++it) {
                 double thr = PTLEAD_THR[it];
 
-                TString subname;
-                subname.Form("pTlead_ge%g", thr);
+                // Build tag name consistent with unfolding:
+                // e.g. "R0.2_CENT_0_10_ptlead5"
+                TString tagDirName;
+                tagDirName.Form("%s_%s_ptlead%.0f", rname.c_str(), cname.c_str(), thr);
 
-                TDirectory *outThr = outC->mkdir(subname);
-                if (!outThr) outThr = outC->GetDirectory(subname);
-                outThr->cd();
+                // Create / get directory for this tag at the TOP level of the file
+                fout->cd();
+                outTag[it] = (TDirectory*)fout->mkdir(tagDirName);
+                if (!outTag[it]) outTag[it] = fout->GetDirectory(tagDirName);
+                outTag[it]->cd();
 
-                TString baseTag;
-                baseTag.Form("%s_%s_pTlead_ge%g", rname.c_str(), cname.c_str(), thr);
-
-                // --- Matching efficiency vs mc_pt ---
-                TString n_match_den = "h_match_mc_den_" + baseTag;
-                TString n_match_num = "h_match_mc_num_" + baseTag;
-                TString n_match_eff = "h_match_mc_eff_" + baseTag;
-
-                h_match_mc_den[it] = new TH1D(n_match_den, "MC jets (denominator)",
-                                              nbins_mc, xmin_mc, xmax_mc);
-                h_match_mc_num[it] = new TH1D(n_match_num, "Matched MC jets (numerator)",
-                                              nbins_mc, xmin_mc, xmax_mc);
-                h_match_mc_eff[it] = (TH1D*) h_match_mc_num[it]->Clone(n_match_eff);
+                // Histogram base names can now be simple, they live in separate dirs
+                // Matching efficiency vs mc_pt
+                h_match_mc_den[it] = new TH1D("h_match_mc_den", "MC jets (denominator)",
+                                            nbins_mc, xmin_mc, xmax_mc);
+                h_match_mc_num[it] = new TH1D("h_match_mc_num", "Matched MC jets (numerator)",
+                                            nbins_mc, xmin_mc, xmax_mc);
+                h_match_mc_eff[it] = (TH1D*)h_match_mc_num[it]->Clone("h_match_mc_eff");
                 h_match_mc_eff[it]->SetTitle("Matching efficiency vs p_{T}^{MC}");
 
-                // --- Trigger efficiency vs reco_pt_corr ---
-                TString n_trig_den = "h_trig_den_" + baseTag;
-                TString n_trig_num = "h_trig_num_" + baseTag;
-                TString n_trig_eff = "h_trig_eff_" + baseTag;
-
-                h_trig_den[it] = new TH1D(n_trig_den, "Reco jets (denominator)",
-                                          nbins_reco, xmin_reco, xmax_reco);
-                h_trig_num[it] = new TH1D(n_trig_num, "Triggered reco jets (numerator)",
-                                          nbins_reco, xmin_reco, xmax_reco);
-                h_trig_eff[it] = (TH1D*) h_trig_num[it]->Clone(n_trig_eff);
+                // Trigger efficiency vs reco_pt_corr
+                h_trig_den[it] = new TH1D("h_trig_den", "Reco jets (denominator)",
+                                        nbins_reco, xmin_reco, xmax_reco);
+                h_trig_num[it] = new TH1D("h_trig_num", "Triggered reco jets (numerator)",
+                                        nbins_reco, xmin_reco, xmax_reco);
+                h_trig_eff[it] = (TH1D*)h_trig_num[it]->Clone("h_trig_eff");
                 h_trig_eff[it]->SetTitle("Trigger efficiency vs p_{T}^{corr}");
 
-                // --- Purity vs reco_pt_corr ---
-                TString n_pur_den = "h_pur_den_" + baseTag;
-                TString n_pur_num = "h_pur_num_" + baseTag;
-                TString n_pur_eff = "h_pur_eff_" + baseTag;
-
-                h_pur_den[it] = new TH1D(n_pur_den, "All reco jets (denominator)",
-                                         nbins_reco, xmin_reco, xmax_reco);
-                h_pur_num[it] = new TH1D(n_pur_num, "Matched reco jets (numerator)",
-                                         nbins_reco, xmin_reco, xmax_reco);
-                h_pur_eff[it] = (TH1D*) h_pur_num[it]->Clone(n_pur_eff);
+                // Purity vs reco_pt_corr
+                h_pur_den[it] = new TH1D("h_pur_den", "All reco jets (denominator)",
+                                        nbins_reco, xmin_reco, xmax_reco);
+                h_pur_num[it] = new TH1D("h_pur_num", "Matched reco jets (numerator)",
+                                        nbins_reco, xmin_reco, xmax_reco);
+                h_pur_eff[it] = (TH1D*)h_pur_num[it]->Clone("h_pur_eff");
                 h_pur_eff[it]->SetTitle("Purity vs p_{T}^{corr}");
 
                 h_match_mc_den[it]->Sumw2();
@@ -235,8 +216,6 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_trig_num[it]->Sumw2();
                 h_pur_den[it]->Sumw2();
                 h_pur_num[it]->Sumw2();
-
-                outC->cd();
             }
 
             // --- Loop over tree entries and fill histos ---
@@ -300,34 +279,26 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
             } // end loop over entries
 
             // --- Build efficiency histograms with binomial errors ---
-            outC->cd();
             for (int it = 0; it < N_LEAD_THR; ++it) {
-                double thr = PTLEAD_THR[it];
+                if (!outTag[it]) continue;   // safety
 
-                TString subname;
-                subname.Form("pTlead_ge%g", thr);
-                TDirectory *outThr = (TDirectory*) outC->Get(subname);
-                if (!outThr) continue;
-                outThr->cd();
+                outTag[it]->cd();
 
                 // Matching efficiency ε_match(mc) = num / den
                 h_match_mc_eff[it]->Divide(h_match_mc_num[it],
-                                           h_match_mc_den[it],
-                                           1.0, 1.0, "b");
+                                        h_match_mc_den[it],
+                                        1.0, 1.0, "b");
 
                 // Trigger efficiency ε_trig(reco) = num / den
                 h_trig_eff[it]->Divide(h_trig_num[it],
-                                       h_trig_den[it],
-                                       1.0, 1.0, "b");
+                                    h_trig_den[it],
+                                    1.0, 1.0, "b");
 
                 // Purity P(reco) = num / den
                 h_pur_eff[it]->Divide(h_pur_num[it],
-                                      h_pur_den[it],
-                                      1.0, 1.0, "b");
-
-                outC->cd();
+                                    h_pur_den[it],
+                                    1.0, 1.0, "b");
             }
-
         } // end loop over centrality dirs
     } // end loop over R dirs
 

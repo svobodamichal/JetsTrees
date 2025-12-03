@@ -29,7 +29,7 @@ static const int kNBayesIters = sizeof(kBayesIters)/sizeof(kBayesIters[0]);
 static const double kTestFrac = 0.50;     // 50/50 split
 static const uint32_t kSeed    = 12345;   // deterministic split
 
-static const double kPtLeadCuts[] = {0.0, 5.0, 7.0};
+static const double kPtLeadCuts[] = {0.0, 5.0, 7.0, 9.0};
 static const int    kNPtLeadCuts  = sizeof(kPtLeadCuts)/sizeof(kPtLeadCuts[0]);
 
 // measured & truth binning
@@ -62,7 +62,7 @@ static void EnsureDir(const string& path){
     gSystem->mkdir(path.c_str(), /*recursive=*/true);
 }
 
-void unfold(const char* inputFile,
+void unfold_embedding(const char* inputFile,
             const char* outDir)
 {
   gStyle->SetOptStat(0);
@@ -71,6 +71,15 @@ void unfold(const char* inputFile,
   TFile* fin = TFile::Open(inputFile, "READ");
   if (!fin || fin->IsZombie()) {
     cout << "[error] Cannot open input file: " << inputFile << endl;
+    return;
+  }
+
+  const string outRootPath = string(outDir) + "/responses_embedding.root";
+  TFile* fout = TFile::Open(outRootPath.c_str(), "RECREATE");
+  if (!fout || fout->IsZombie()) {
+    cout << "[error] Cannot create output file: " << outRootPath << endl;
+    fin->Close();
+    delete fin;
     return;
   }
 
@@ -200,15 +209,6 @@ void unfold(const char* inputFile,
         }
         cout << endl;
 
-cout << "==== Sanity check for tag " << tag << " ====" << endl;
-cout << "  Integral(Truth train) = " << hTrueTrain->Integral(0, -1) << endl;
-cout << "  Integral(Meas  train) = " << hMeasTrain->Integral(0, -1) << endl;
-cout << "  Integral(Truth test ) = " << hTrueTest ->Integral(0, -1) << endl;
-cout << "  Integral(Meas  test ) = " << hMeasTest ->Integral(0, -1) << endl;
-cout << "  Integral(Prior      ) = " << hPrior    ->Integral(0, -1) << endl;
-
-
-
         double intPrior = hPrior->Integral();
         double intTrue  = hTrueTrain->Integral();
         if (intPrior > 0.0 && intTrue > 0.0) {
@@ -322,18 +322,32 @@ cout << "  Integral(Prior      ) = " << hPrior    ->Integral(0, -1) << endl;
 
         // ---------- save ----------
         const string tagfile = R + "_" + C + Form("_ptlead%.0f", cut);
-        const string rootPath = string(outDir) + "/unfold_response_" + tagfile + ".root";
-        const string pdfPath  = string(outDir) + "/closure_" + tagfile + ".pdf";
+        const string pdfPath = string(outDir) + "/closure_" + tagfile + ".pdf";
 
-        TFile* outf = TFile::Open(rootPath.c_str(), "RECREATE");
-        hRespRecoVsTruth->Write();
-        response.Write();
-        hMeasTrain->Write(); hTrueTrain->Write();
-        hMeasTest->Write();  hTrueTest->Write();
-        hPrior->Write();     // save the prior used
-        for (auto* u : unfolded) if (u) u->Write();
-        outf->Close();
+        // create a directory for this (R, centrality, ptlead) inside fout
+        TDirectory* d = fout->mkdir(tagfile.c_str());
+        d->cd();
 
+        // give simple, consistent object names inside the directory
+        hRespRecoVsTruth->Write("hRespRecoVsTruth");
+        response.Write("response");
+
+        hMeasTrain->Write("hMeasTrain");
+        hTrueTrain->Write("hTrueTrain");
+        hMeasTest ->Write("hMeasTest");
+        hTrueTest ->Write("hTrueTest");
+        hPrior    ->Write("hPrior");  // save the prior used
+
+        // optionally save unfolded spectra for closure checks
+        for (int ib = 0; ib < kNBayesIters; ++ib) {
+          if (unfolded[ib]) {
+            unfolded[ib]->Write(
+              Form("Unfolded_iter%d", kBayesIters[ib])
+            );
+          }
+        }
+
+        // save closure plot as before
         c->SaveAs(pdfPath.c_str());
 
         // ---------- cleanup ----------
@@ -354,6 +368,10 @@ cout << "  Integral(Prior      ) = " << hPrior    ->Integral(0, -1) << endl;
   } // radii
 
   cout << "Done. Outputs in: " << outDir << endl;
+
+  fout->Close();
+  delete fout;
+
   fin->Close();
   delete fin;
 }
