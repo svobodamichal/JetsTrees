@@ -135,6 +135,7 @@ void unfold(const char* inputFile,
         const double cut = kPtLeadCuts[ic];
         const string tag = R + "_" + C + Form("_ptlead%.0f", cut);
 
+        // --- histos: train/test for closure ---
         TH1D* hMeasTrain = new TH1D(("hMeas_"+tag).c_str(),
             ";reco p_{T}^{corr} [GeV];dN/dp_{T}",
             nbins_meas, bin_meas_edges);
@@ -144,18 +145,42 @@ void unfold(const char* inputFile,
         TH1D* hMeasTest  = (TH1D*)hMeasTrain->Clone(("hMeasTest_"+tag).c_str());
         TH1D* hTrueTest  = (TH1D*)hTrueTrain->Clone(("hTrueTest_"+tag).c_str());
 
+        hMeasTrain->SetDirectory(0);
+        hTrueTrain->SetDirectory(0);
+        hMeasTest ->SetDirectory(0);
+        hTrueTest ->SetDirectory(0);
+
+        // --- response matrix ---
         TH2D* hRespRecoVsTruth = new TH2D(("hResp_"+tag).c_str(),
             ";p_{T}^{reco,corr};p_{T}^{mc}",
             nbins_meas, bin_meas_edges,
             nbins_truth, bin_truth_edges);
+        hRespRecoVsTruth->SetDirectory(0);
+
+        // --- prior (truth-only, using *all* jets passing truth-side cuts) ---
+        TH1D* hPrior = new TH1D(("hPrior_"+tag).c_str(),
+            ";mc p_{T} [GeV];prior",
+            nbins_truth, bin_truth_edges);
+        hPrior->SetDirectory(0);
 
         TRandom3 rng(kSeed);
 
         // event loop
         for (Long64_t i = 0; i < n; ++i) {
-          if ((i % 200000) == 0) cout << "  ["<< tag <<"] " << i << "/" << n << "\r" << std::flush;
+          if ((i % 200000) == 0)
+            cout << "  ["<< tag <<"] " << i << "/" << n << "\r" << std::flush;
+
           tr->GetEntry(i);
 
+          // weight (same for prior and response)
+          const double w = (double)centralityWeight * (double)xsecWeight;
+
+          // ----- fill prior: only MC-side cuts -----
+          if (mc_pt > 0.0 && mc_pt_lead >= cut) {
+            hPrior->Fill(mc_pt, w);
+          }
+
+          // ----- reco-side cuts for response & closure -----
           if (!reco_trigger_match) continue;
           if (reco_area < areaMin) continue;
           if (reco_neutral_fraction > CUT_NEUTRAL_FRACTION) continue;
@@ -163,53 +188,93 @@ void unfold(const char* inputFile,
           // dual ptlead cut (both reco & MC)
           if (!(reco_pt_lead >= cut && mc_pt_lead >= cut)) continue;
 
-          const double w = (double)centralityWeight * (double)xsecWeight;
-
           const bool train = (rng.Uniform() > kTestFrac);
           if (train) {
             hRespRecoVsTruth->Fill(reco_pt_corr, mc_pt, w);
             hMeasTrain->Fill(reco_pt_corr, w);
-            hTrueTrain->Fill(mc_pt, w);
+            hTrueTrain->Fill(mc_pt,        w);
           } else {
             hMeasTest->Fill(reco_pt_corr, w);
-            hTrueTest->Fill(mc_pt, w);
+            hTrueTest->Fill(mc_pt,        w);
           }
         }
         cout << endl;
 
+cout << "==== Sanity check for tag " << tag << " ====" << endl;
+cout << "  Integral(Truth train) = " << hTrueTrain->Integral(0, -1) << endl;
+cout << "  Integral(Meas  train) = " << hMeasTrain->Integral(0, -1) << endl;
+cout << "  Integral(Truth test ) = " << hTrueTest ->Integral(0, -1) << endl;
+cout << "  Integral(Meas  test ) = " << hMeasTest ->Integral(0, -1) << endl;
+cout << "  Integral(Prior      ) = " << hPrior    ->Integral(0, -1) << endl;
+
+
+
+        double intPrior = hPrior->Integral();
+        double intTrue  = hTrueTrain->Integral();
+        if (intPrior > 0.0 && intTrue > 0.0) {
+          hPrior->Scale(intTrue / intPrior);
+}
+
+        // --- build response ---
         RooUnfoldResponse response(hMeasTrain, hTrueTrain, hRespRecoVsTruth);
         response.SetName(("response_"+tag).c_str());
 
+        // --- unfolding with explicit prior ---
         vector<TH1D*> unfolded(kNBayesIters, nullptr);
         for (int ib = 0; ib < kNBayesIters; ++ib) {
-          RooUnfoldBayes u(&response, hMeasTest, kBayesIters[ib]);
+          // RooUnfoldBayes(res, meas, nIter, smoothit=false, prior)
+          RooUnfoldBayes u(&response, hMeasTest,
+                           kBayesIters[ib], false, hPrior);
           TH1D* hunf = (TH1D*)u.Hunfold();
           hunf->SetDirectory(nullptr);
           hunf->SetName(Form("Unfolded_%s_iter%d", tag.c_str(), kBayesIters[ib]));
           unfolded[ib] = hunf;
         }
 
-        // plot
+        // Rebin unfolded to truth binning (for plotting & ratio)
+        vector<TH1D*> unfoldedTruth(kNBayesIters, nullptr);
+        for (int ib = 0; ib < kNBayesIters; ++ib) {
+          if (!unfolded[ib]) continue;
+          unfoldedTruth[ib] = (TH1D*)unfolded[ib]->Rebin(
+              nbins_truth,
+              Form("UnfTruthBins_%d_%s", kBayesIters[ib], tag.c_str()),
+              bin_truth_edges);
+          unfoldedTruth[ib]->SetDirectory(nullptr);
+        }
+
+        // ========================= PLOTTING =========================
         TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1200);
         c->Divide(1,2);
 
-        c->cd(1); gPad->SetLogy();
-        TH1D* hM = (TH1D*)hMeasTest->Clone(("hMeasW_"+tag).c_str());
-        TH1D* hT = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
-        hM->Scale(1.0, "width");
-        hT->Scale(1.0, "width");
-        hM->SetMarkerStyle(24); hM->SetLineColor(kBlue+1);
-        hT->SetMarkerStyle(20); hT->SetLineColor(kBlack);
-        hT->Draw("E1");
-        hM->Draw("E1 SAME");
+        // ---------- top pad: shapes in TRUTH binning ----------
+        c->cd(1);
+        gPad->SetLogy();
+
+        TH1D* hT_plot = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
+      //  hT_plot->Scale(1.0, "width");
+        hT_plot->SetMarkerStyle(20);
+        hT_plot->SetLineColor(kBlack);
+
+        TH1D* hM_truth = (TH1D*)hMeasTest->Rebin(
+            nbins_truth,
+            ("hMeasTruthBins_"+tag).c_str(),
+            bin_truth_edges);
+      //  hM_truth->Scale(1.0, "width");
+        hM_truth->SetMarkerStyle(24);
+        hM_truth->SetLineColor(kBlue+1);
+
+        hT_plot->GetXaxis()->SetTitle("p_{T} [GeV]");
+        hT_plot->Draw("E1");
+        hM_truth->Draw("E1 SAME");
 
         TLegend* leg = new TLegend(0.58,0.58,0.88,0.88);
-        leg->AddEntry(hT, "Truth (test)", "lp");
-        leg->AddEntry(hM, "Measured (test)", "lp");
+        leg->AddEntry(hT_plot,  "Truth (test)",    "lp");
+        leg->AddEntry(hM_truth, "Measured (test)", "lp");
 
         for (int ib = 0; ib < kNBayesIters; ++ib) {
-          TH1D* w = (TH1D*)unfolded[ib]->Clone(Form("UnfW_%d_%s", kBayesIters[ib], tag.c_str()));
-          w->Scale(1.0, "width");
+          TH1D* w = unfoldedTruth[ib];
+          if (!w) continue;
+       //   w->Scale(1.0, "width");
           w->SetMarkerStyle(20);
           w->SetMarkerColor(kMagenta + ib);
           w->SetLineColor(kMagenta + ib);
@@ -218,24 +283,44 @@ void unfold(const char* inputFile,
         }
         leg->Draw();
 
+        // ---------- bottom pad: ratio unfolded / truth ----------
         c->cd(2);
-        TH1D* frame = (TH1D*)hT->Clone(("ratioFrame_"+tag).c_str());
-        frame->Reset();
-        frame->GetYaxis()->SetTitle("Unfolded / Truth");
-        frame->GetYaxis()->SetRangeUser(0.5, 1.5);
-        frame->Draw();
-        for (int ib = 0; ib < kNBayesIters; ++ib) {
-          TH1D* r = (TH1D*)unfolded[ib]->Clone(Form("ratio_%d_%s", kBayesIters[ib], tag.c_str()));
-          r->Divide(hT);
-          r->Draw(ib==0 ? "E1" : "E1 SAME");
-        }
-        TLine* ln = new TLine(frame->GetXaxis()->GetXmin(), 1.05,
-                              frame->GetXaxis()->GetXmax(), 1.05);
-        ln->SetLineStyle(2); ln->SetLineColor(kGray+1); ln->Draw();
-        ln = new TLine(frame->GetXaxis()->GetXmin(), 0.95,
-                       frame->GetXaxis()->GetXmax(), 0.95);
-        ln->SetLineStyle(2); ln->SetLineColor(kGray+1); ln->Draw();
+        gPad->SetGridy();  // optional, just cosmetic
 
+        TH1D* firstRatio = nullptr;
+
+        for (int ib = 0; ib < kNBayesIters; ++ib) {
+          TH1D* hunf_reb = unfoldedTruth[ib];
+          if (!hunf_reb) continue;
+
+          TH1D* r = (TH1D*)hunf_reb->Clone(
+              Form("ratio_%d_%s", kBayesIters[ib], tag.c_str()));
+          r->Divide(hTrueTest);       // bin–by–bin unfolded / truth
+
+          if (!firstRatio) {
+            firstRatio = r;
+            firstRatio->SetTitle("");
+            firstRatio->GetYaxis()->SetTitle("Unfolded / Truth");
+            firstRatio->GetYaxis()->SetRangeUser(0.0, 2.0);
+            firstRatio->Draw("E1");   // defines axes
+          } else {
+            r->Draw("E1 SAME");
+          }
+        }
+
+        // draw guide lines at 0.95 and 1.05 if we actually drew something
+        if (firstRatio) {
+          double xmin = firstRatio->GetXaxis()->GetXmin();
+          double xmax = firstRatio->GetXaxis()->GetXmax();
+
+          TLine* ln1 = new TLine(xmin, 1.05, xmax, 1.05);
+          ln1->SetLineStyle(2); ln1->SetLineColor(kGray+1); ln1->Draw();
+
+          TLine* ln2 = new TLine(xmin, 0.95, xmax, 0.95);
+          ln2->SetLineStyle(2); ln2->SetLineColor(kGray+1); ln2->Draw();
+        }
+
+        // ---------- save ----------
         const string tagfile = R + "_" + C + Form("_ptlead%.0f", cut);
         const string rootPath = string(outDir) + "/unfold_response_" + tagfile + ".root";
         const string pdfPath  = string(outDir) + "/closure_" + tagfile + ".pdf";
@@ -245,18 +330,25 @@ void unfold(const char* inputFile,
         response.Write();
         hMeasTrain->Write(); hTrueTrain->Write();
         hMeasTest->Write();  hTrueTest->Write();
+        hPrior->Write();     // save the prior used
         for (auto* u : unfolded) if (u) u->Write();
         outf->Close();
 
         c->SaveAs(pdfPath.c_str());
 
-        // cleanup
+        // ---------- cleanup ----------
         delete c;
-        delete hM; delete hT;
+        delete hT_plot;
+        delete hM_truth;
         delete hRespRecoVsTruth;
-        delete hMeasTrain; delete hTrueTrain;
-        delete hMeasTest;  delete hTrueTest;
-        for (auto* u: unfolded) delete u;
+        delete hMeasTrain;
+        delete hTrueTrain;
+        delete hMeasTest;
+        delete hTrueTest;
+        delete hPrior;
+        delete leg;
+        for (auto* u  : unfolded)      delete u;
+        for (auto* ut : unfoldedTruth) delete ut;
       } // ptlead cuts
     } // centralities
   } // radii

@@ -20,10 +20,10 @@ if [[ $# -ge 1 ]]; then
   if [[ "$1" = /* ]]; then
     INPUT="$1"
   else
-    INPUT="${BASE}/trees/merged_all/$1"
+    INPUT="${BASE}/trees/$1"
   fi
 else
-  INPUT="${BASE}/trees/merged_all/embedding_merged.root"
+  INPUT="${BASE}/trees/embedding_merged.root"
 fi
 
 # 2nd arg: output directory (default: analysis/unfolding/out under BASE)

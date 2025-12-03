@@ -12,7 +12,7 @@
 #
 # Defaults:
 #   BASE     = <REPO>/data/submit/<newest_YYYY-MM-DD>
-#   OUT_DIR  = <REPO>/trees/merged_all
+#   OUT_DIR  = <REPO>/trees
 #   OUT_NAME = embedding_merged.root
 #
 # Env:
@@ -48,7 +48,7 @@ if [[ -z "$latest_run" ]]; then
 fi
 
 DEFAULT_BASE="${SUBMIT_DIR}/${latest_run}"
-DEFAULT_OUT_DIR="${SCRIPT_DIR}/merged_all"
+DEFAULT_OUT_DIR="${SCRIPT_DIR}"
 
 ########################
 # Arguments

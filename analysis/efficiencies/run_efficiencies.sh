@@ -8,15 +8,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default file names (can be overridden via arguments)
 IN_BASENAME="${1:-embedding_merged.root}"
-OUT_BASENAME="${2:-hists.root}"
+OUT_BASENAME="${2:-efficiencies.root}"
 
 # Paths relative to the script location
 INPUT="${SCRIPT_DIR}/../../trees/${IN_BASENAME}"
 OUTPUT="${SCRIPT_DIR}/${OUT_BASENAME}"
-MACRO="${SCRIPT_DIR}/make_hists.C"
+MACRO="${SCRIPT_DIR}/make_efficiencies.C"
 
 echo "----------------------------------------"
-echo "Running histogram production"
+echo "Running efficiency production"
 echo "Script dir : $SCRIPT_DIR"
 echo "Input      : $INPUT"
 echo "Output     : $OUTPUT"

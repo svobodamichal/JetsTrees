@@ -53,7 +53,9 @@ ClassImp(StPicoHFJetMaker)
     StPicoHFJetMaker::StPicoHFJetMaker(TString name, StPicoDstMaker *picoMaker,
                                        TString outputBaseFileName)
     : StPicoJetMaker(name, picoMaker, outputBaseFileName),
-      mRefmultCorrUtil(NULL) {
+      mRefmultCorrUtil(NULL),
+      mStoreOnlyTrigOrMc(false)    // NEW: default = keep all reco jets
+ {
 
   // constructor
 }
@@ -93,55 +95,6 @@ int StPicoHFJetMaker::InitJets() {
       TDirectory* cdir = rdir->mkdir(kCentTag[c3]);
       if (!cdir) cdir = (TDirectory*)rdir->Get(kCentTag[c3]);
       cdir->cd();
-      const int ci = c3; 
-
-      if (iR == 0 && c3 == 1) {
-        const size_t nR = fR.size();
-        fH2_den.assign(nR, std::vector<TH2D*>(4, nullptr));
-        fH2_num.assign(nR, std::vector<TH2D*>(4, nullptr));
-        fH1_reco.assign(nR, std::vector<TH1D*>(4, nullptr));
-        fH1_mc.assign(nR, std::vector<TH1D*>(4, nullptr));
-        fH2_reco_mc.assign(nR, std::vector<TH2D*>(4, nullptr));
-        fH2_reco_matched.assign(nR, std::vector<TH2D*>(4, nullptr));
-
-      }
-
-      
-      const int nb_pt   = 1000;  const double pt_min   = -40.0, pt_max   = 60.0;
-      const int nb_lead = 200;  const double lead_min = 0.0, lead_max = 30.0;
-
-    fH2_den[iR][ci] = new TH2D("den_ptcorr_vs_ptlead",
-      Form("Den: p_{T}^{corr} vs p_{T}^{lead} (R=%.1f, %s);p_{T}^{corr} [GeV];p_{T}^{lead} [GeV]",
-       fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max, nb_lead, lead_min, lead_max);
-    fH2_den[iR][ci]->SetDirectory(cdir);
-
-    fH2_num[iR][ci] = new TH2D("num_ptcorr_vs_ptlead",
-      Form("Num: (trg) p_{T}^{corr} vs p_{T}^{lead} (R=%.1f, %s);p_{T}^{corr} [GeV];p_{T}^{lead} [GeV]",
-       fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max, nb_lead, lead_min, lead_max);
-    fH2_num[iR][ci]->SetDirectory(cdir);
-
-    fH1_reco[iR][ci] = new TH1D("reco_ptcorr",
-      Form("Reco jet p_{T}^{corr} (R=%.1f, %s);p_{T}^{corr} [GeV];Jets",
-       fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max);
-    fH1_reco[iR][ci]->SetDirectory(cdir);
-
-
-    if (mIsEmbedding) {
-      fH1_mc[iR][ci] = new TH1D("mc_pt",
-        Form("MC jet p_{T} (R=%.1f, %s);p_{T}^{MC} [GeV];Jets",
-         fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max);
-      fH1_mc[iR][ci]->SetDirectory(cdir);
-
-      fH2_reco_mc[iR][ci] = new TH2D("recoptcorr_vs_mcpt",
-        Form("Reco p_{T}^{corr} vs MC p_{T} (R=%.1f, %s);p_{T}^{MC} [GeV];p_{T}^{corr} [GeV]",
-         fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max, nb_pt, pt_min, pt_max);
-      fH2_reco_mc[iR][ci]->SetDirectory(cdir);
-
-      fH2_reco_matched[iR][ci] = new TH2D("reco_matched_ptcorr_vs_ptlead",
-        Form("Matched reco jets p_{T}^{corr} vs p_{T}^{lead} (R=%.1f, %s);p_{T}^{corr} [GeV];p_{T}^{lead} [GeV]",
-         fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max, nb_lead, lead_min, lead_max);
-      fH2_reco_matched[iR][ci]->SetDirectory(cdir);
-    }
       
       // ---- TTree per (R,class); NO centrality branch
       TTree* jetTree = new TTree("JetTree", "JetTree");
@@ -191,41 +144,29 @@ int StPicoHFJetMaker::FinishJets() {
 
   const size_t nR = fR.size();
 
-  for (size_t iR = 0; iR < nR; ++iR) {
-    TDirectory* rdir = dynamic_cast<TDirectory*>(fileDir->Get(Form("R%.1f", fR[iR])));
-    if (!rdir) continue;
+for (size_t iR = 0; iR < nR; ++iR) {
+  TDirectory* rdir = dynamic_cast<TDirectory*>(fileDir->Get(Form("R%.1f", fR[iR])));
+  if (!rdir) continue;
 
-    for (int c3 = 1; c3 <= 3; ++c3) {
-      const int ciTree = c3 - 1;  // 0..2
+  for (int c3 = 1; c3 <= 3; ++c3) {
+    const int ciTree = c3 - 1;  // 0..2
 
-      TDirectory* cdir = dynamic_cast<TDirectory*>(rdir->Get(kCentTag[c3]));
-      if (!cdir) continue;
-      cdir->cd();
+    TDirectory* cdir = dynamic_cast<TDirectory*>(rdir->Get(kCentTag[c3]));
+    if (!cdir) continue;
+    cdir->cd();
 
-      // --- write the tree
-       if (iR < fTreeRC.size() && ciTree >= 0 && ciTree < (int)fTreeRC[iR].size() && fTreeRC[iR][ciTree]) {
-        fTreeRC[iR][ciTree]->Write();
-      }
-
-      // --- write the histograms (if they exist)
-      const size_t ci = size_t(c3);
-      if (iR < fH2_den.size()) {
-        if (ci < fH2_den[iR].size()     && fH2_den[iR][ci])     fH2_den[iR][ci]->Write();
-        if (ci < fH2_num[iR].size()     && fH2_num[iR][ci])     fH2_num[iR][ci]->Write();
-        if (ci < fH1_reco[iR].size()    && fH1_reco[iR][ci])    fH1_reco[iR][ci]->Write();
-      if (mIsEmbedding) {
-        if (ci < fH1_mc[iR].size()          && fH1_mc[iR][ci])          fH1_mc[iR][ci]->Write();
-        if (ci < fH2_reco_mc[iR].size()     && fH2_reco_mc[iR][ci])     fH2_reco_mc[iR][ci]->Write();
-        if (ci < fH2_reco_matched[iR].size()&& fH2_reco_matched[iR][ci])fH2_reco_matched[iR][ci]->Write(); // NEW
-      }
-      }
-    } // c3
-  }   // iR
+    // --- write the tree
+    if (iR < fTreeRC.size() && ciTree >= 0 &&
+        ciTree < (int)fTreeRC[iR].size() &&
+        fTreeRC[iR][ciTree]) {
+      fTreeRC[iR][ciTree]->Write();
+    }
+  } // c3
+}   // iR
 
   fileDir->cd();
   return kStOK;
 }
-
 
 // _________________________________________________________
 int StPicoHFJetMaker::MakeJets() {
@@ -251,8 +192,6 @@ int StPicoHFJetMaker::MakeJets() {
   vector<fastjet::PseudoJet> neutraljetTracks; // from bemc towers only
   vector<fastjet::PseudoJet> fullTracks;
   vector<fastjet::PseudoJet> MCjetTracks;
-
-
 
   fRunNumber = mPicoDst->event()->runId();
   int eventId = mPicoDst->event()->eventId(); // eventID
@@ -280,9 +219,6 @@ int StPicoHFJetMaker::MakeJets() {
   for (int i = 0; i < 4800; i++) Sump[i] = 0.0;
   return kStOK;
   }
-
-  const double w_event = fCentralityWeight * (mIsEmbedding ? fXsecWeight : 1.0);
-  const int ci = c3;
 
   // MC tracks
   int noMCtracks = mPicoDst->numberOfMcTracks();
@@ -439,10 +375,7 @@ if (mIsEmbedding && fpThatmax > 0.0 && !MCjetTracks.empty()) {
   } // end loop over primary tracks
 
   fullTracks = neutraljetTracks;
-  fullTracks.insert(
-      fullTracks.end(), jetTracks.begin(),
-      jetTracks.end()); // commenting this line will cause only neutral jets,
-  // MAX NEUTRAL FRACTION HAS TO BE TURNED OFF
+  fullTracks.insert(fullTracks.end(), jetTracks.begin(),jetTracks.end()); // commenting this line will cause only neutral jets, MAX NEUTRAL FRACTION HAS TO BE TURNED OFF
 
 //==================================================================================//
 // Jet part
@@ -490,14 +423,6 @@ for (auto &rcJet : RecoJets) {
   if (i < fTreeRC.size() && ciTree >= 0 && ciTree < (int)fTreeRC[i].size())
     jetTree = fTreeRC[i][ciTree];
 
-  // histogram pointers for this (R, class)
-  TH2D* hDen    = (i < fH2_den.size()     && ci >= 0 && fH2_den[i][ci])     ? fH2_den[i][ci]     : nullptr;
-  TH2D* hNum    = (i < fH2_num.size()     && ci >= 0 && fH2_num[i][ci])     ? fH2_num[i][ci]     : nullptr;
-  TH1D* hReco   = (i < fH1_reco.size()    && ci >= 0 && fH1_reco[i][ci])    ? fH1_reco[i][ci]    : nullptr;
-  TH1D* hMc     = (mIsEmbedding && i < fH1_mc.size() && ci >= 0 && fH1_mc[i][ci]) ? fH1_mc[i][ci] : nullptr;
-  TH2D* hRecoMc = (mIsEmbedding && i < fH2_reco_mc.size() && ci >= 0 && fH2_reco_mc[i][ci]) ? fH2_reco_mc[i][ci] : nullptr;
-  TH2D* hRecoMatched = (mIsEmbedding && i < fH2_reco_matched.size() && ci >= 0 && fH2_reco_matched[i][ci]) ? fH2_reco_matched[i][ci] : nullptr;
-
 //==================== Embedding mode ==================//
 if (mIsEmbedding) {
   //============================== MC jets ===============================//
@@ -517,7 +442,6 @@ for (auto &mcJet : McJets) {
   myMcJets.push_back(MyJet(mcJet, 0.0f));
 }
 
-
   //========================= MC–Reco matching ===========================//
   vector<MatchedJetPair> MatchedJets = MatchJetsEtaPhi(myMcJets, myRecoJets, fR[i]);
 
@@ -529,60 +453,22 @@ for (auto &mcJet : McJets) {
     const bool haveReco = (fRecoJet.pt >= 0);
     const bool haveMC   = (fMcJet.pt   >= 0);
 
-    // --- MC-only histograms (all MC jets) ---
-    if (haveMC && hMc) {
-      hMc->Fill(fMcJet.pt, w_event);
+
+// ================= Tree filling =================
+// Embedding: we can store everything or only MC / triggered reco
+if (jetTree && (haveMC || haveReco)) {
+  if (mStoreOnlyTrigOrMc) {
+    // Compact mode:
+    //  - keep all MC jets (even if no reco)
+    //  - keep reco jets only if they are triggered
+    if (haveMC || (haveReco && fRecoJet.trigger_match)) {
+      jetTree->Fill();
     }
-
-    // ================= Reco-part: trigger-efficiency histos =================
-    if (haveReco) {
-      // Always apply area & neutral-fraction cuts for trigger-efficiency histos
-      const bool passCuts = passHistoCuts(fRecoJet, fR[i]);
-
-      // Den: all reco jets that pass cuts
-      if (passCuts && hDen) {
-        hDen->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
-      }
-
-      // Reco-only, non-trigger jets: only Den (if above) and nothing else,
-      if (!fRecoJet.trigger_match && !haveMC) {
-        continue; // skip Num/Reco/Response/Tree for these
-      }
-
-      // Num: triggered jets only, with cuts
-      if (fRecoJet.trigger_match && passCuts && hNum) {
-        hNum->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
-      }
-
-      // Reco spectrum (for jets in the trigger/MC sample), with cuts
-      if (passCuts && hReco) {
-        hReco->Fill(fRecoJet.pt_corr, w_event);
-      }
-
-      // Response matrix: only matched jets, with cuts
-      if (haveMC && passCuts && hRecoMc) {
-        hRecoMc->Fill(fMcJet.pt, fRecoJet.pt_corr, w_event);
-      }
-
-      // Matched reco jets for trigger/MC sample, with cuts
-      if (haveMC && passCuts && hRecoMatched) {
-        hRecoMatched->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
-      }
-
-    } // end if (haveReco)
-
-    // ================= Tree filling =================
-    // Now we want:
-    //  - all MC jets (even if no reco) in the tree
-    //  - plus reco jets with MC or trigger (same as before) 
-    if (jetTree) {
-      // MC-only jets: haveMC == true, haveReco == false -> included here
-      // Reco-only triggered jets: haveMC == false, trigger_match == true -> also included
-      // Matched jets: haveMC == true, haveReco == true -> included
-      if (haveMC || (haveReco && fRecoJet.trigger_match)) {
-        jetTree->Fill();
-      }
-    }
+  } else {
+    // Full QA mode: store all jets (matched, unmatched, triggered, untriggered)
+    jetTree->Fill();
+  }
+}
   } // end loop over MatchedJets
 
 } else {
@@ -592,29 +478,20 @@ for (auto &mcJet : McJets) {
     fMcJet   = MyJet();   // dummy
     fDeltaR  = -1.0;
 
-    // Always apply area & neutral-fraction cuts for trigger-efficiency histos
-    const bool passCuts = passHistoCuts(fRecoJet, fR[i]);
+    if (!jetTree) continue;
 
-    // Den: all reco jets that pass cuts
-    if (passCuts && hDen) {
-      hDen->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
+    if (mStoreOnlyTrigOrMc) {
+      // Compact mode: only keep triggered jets
+      if (fRecoJet.trigger_match) {
+        jetTree->Fill();
+      }
+    } else {
+      // Full QA mode: keep all reco jets
+      jetTree->Fill();
     }
-
-    // Num: triggered jets only, with cuts
-    if (fRecoJet.trigger_match && passCuts && hNum) {
-      hNum->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
-    }
-
-    // Reco spectrum of triggered jets, with cuts
-    if (fRecoJet.trigger_match && passCuts && hReco) {
-      hReco->Fill(fRecoJet.pt_corr, w_event);
-    }
-
-    // Tree: only triggered jets, independent of cuts
-    if (!fRecoJet.trigger_match) continue;
-    if (jetTree) jetTree->Fill();
   } // end loop over reco jets (data)
-} // end embedding/data
+
+  } // end embedding/data
 } // end loop over R
 
   for (int i = 0; i < 4800; i++) {
