@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default file names (can be overridden via arguments)
 IN_BASENAME="${1:-embedding_merged.root}"
-OUT_BASENAME="${2:-hists.root}"
+OUT_BASENAME="${2:-hists_no_Xsec_weight.root}"
 
 # Paths relative to the script location
 INPUT="${SCRIPT_DIR}/../../trees/merged_all/${IN_BASENAME}"

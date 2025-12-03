@@ -3,8 +3,7 @@ set -euo pipefail
 
 # --- edit these three if your layout changes ---
 BASE="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees"
-#SIF="/gpfs/mnt/gpfs01/star/pwg/prozorov/singularity/roounfold.sif"
-SIF="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees/root_latest.sif"
+SIF="/gpfs/mnt/gpfs01/star/pwg/prozorov/singularity/roounfold.sif"
 MACRO="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees/analysis/unfolding/unfold.cxx"
 # ----------------------------------------------
 
@@ -20,6 +19,6 @@ mkdir -p "$OUT"
 
 apptainer exec -e -B /gpfs/mnt/gpfs01 \
   "$SIF" \
-  root -l -b -q "{gSystem->Load(\"libRooUnfold\"); .x $MACRO++(\"$IN\",\"$OUT\")}"
+  root -l -b -q 'gSystem->Load("libRooUnfold");' "$MACRO++(\"$IN\",\"$OUT\")"
 
 

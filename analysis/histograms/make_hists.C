@@ -106,7 +106,8 @@ void make_hists(const char *infile  = "embedding_merged.root",
             outC->cd();
 
             // ================== selection & weights ==================
-            std::string wexpr = "xsecWeight*centralityWeight";
+            //std::string wexpr = "xsecWeight*centralityWeight";
+            std::string wexpr = "centralityWeight";
 
             char bufMatch[256];
             sprintf(bufMatch, "(mc_pt>0 && deltaR<%g)", dRmax);

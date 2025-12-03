@@ -527,32 +527,18 @@ if (mIsEmbedding) {
     if (hReco) hReco->Fill(fRecoJet.pt_corr, w_event);
 
     if (haveMC && hRecoMc) hRecoMc->Fill(fMcJet.pt, fRecoJet.pt_corr, w_event);
+    
+    if(!(fRecoJet.pt_corr < fpThatmax*1.5)) continue; // reject high-weight jets
     if (jetTree)
       jetTree->Fill();
   }
-} else {
-  //==================== Data mode ===========================//
-  for (const auto& rj : myRecoJets) {
-    fRecoJet = rj;
-    fMcJet   = MyJet();   // dummy
-    fDeltaR  = -1.0;
-  }
-  if (haveMC && hMc) hMc->Fill(fMcJet.pt, w_event);
-  if (haveReco && haveMC && hRecoMc)
-    hRecoMc->Fill(fMcJet.pt, fRecoJet.pt_corr, w_event);
-
-
-    if (!fRecoJet.trigger_match) {continue;}
- // if ()
-  if (jetTree) jetTree->Fill();
-} // end loop over matched jets
 
   } else {
     //==================== Data mode ===========================//
    for (const auto& rj : myRecoJets) {
-  fRecoJet = rj;            // contains trigger_match already
-  fMcJet   = MyJet();       // dummy
-  fDeltaR  = -1.0;
+    fRecoJet = rj;            // contains trigger_match already
+    fMcJet   = MyJet();       // dummy
+    fDeltaR  = -1.0;
 
     // Den: all jets that pass selection
     if (hDen) hDen->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);

@@ -67,7 +67,7 @@ static void EnsureDir(const string& path){
     gSystem->mkdir(path.c_str(), /*recursive=*/true);
 }
 
-void unfold(const char* inputFile,
+void unfold_SVD(const char* inputFile,
             const char* outDir)
 {
   gStyle->SetOptStat(0);
@@ -258,7 +258,91 @@ void unfold(const char* inputFile,
 
             c->SaveAs(pdfPath.c_str());
         
-      
+        if (doSVD) {
+          cout << "Doing SVD unfolding..." << endl;
+          vector<TH1D*> unfoldedSVD(nSVD, nullptr);
+          for (int ir = 0; ir < nSVD; ++ir) {
+            const int reg = kRegValues[ir];
+            RooUnfoldSvd u(&response, hMeasTest, reg);
+            // optionally switch on regularization via SVD settings:
+            // u.SetRegParam(reg); // not necessary with ctor but shown for clarity
+            TH1D* hunf = dynamic_cast<TH1D*>(u.Hunfold());
+            if (!hunf) {
+              cout << "[error] SVD unfolding failed for reg=" << reg << endl;
+              continue;
+            }
+            hunf->SetDirectory(nullptr);
+            hunf->SetName(Form("Unfolded_SVD_%s_reg%d", tag.c_str(), reg));
+            unfoldedSVD[ir] = hunf;
+          }
+
+          // plot
+          TCanvas* c2 = new TCanvas(("c_"+tag).c_str(), "", 800, 1200);
+          c2->Divide(1,2);
+
+          c2->cd(1); gPad->SetLogy();
+          TH1D* hM = (TH1D*)hMeasTest->Clone(("hMeasW_"+tag).c_str());
+          TH1D* hT = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
+          hM->Scale(1.0, "width"); hT->Scale(1.0, "width");
+          hM->SetMarkerStyle(24); hM->SetLineColor(kBlue+1);
+          hT->SetMarkerStyle(20); hT->SetLineColor(kBlack);
+          hT->Draw("E1");
+          hM->Draw("E1 SAME");
+
+          TLegend* leg = new TLegend(0.58,0.58,0.88,0.88);
+          leg->AddEntry(hT, "Truth (test)", "lp");
+          leg->AddEntry(hM, "Measured (test)", "lp");
+
+          for (int ir = 0; ir < nSVD; ++ir) {
+            TH1D* w = (TH1D*)unfoldedSVD[ir]->Clone(Form("UnfSVDW_%d_%s", kRegValues[ir], tag.c_str()));
+            w->Scale(1.0, "width");
+            w->SetMarkerStyle(20);
+            // pick distinct colors but avoid indexing past palette
+            int col = kMagenta + (ir % 7);
+            w->SetMarkerColor(col);
+            w->SetLineColor(col);
+            w->Draw("E1 SAME");
+            leg->AddEntry(w, Form("SVD reg %d", kRegValues[ir]), "lp");
+          }
+          leg->Draw();
+
+          c2->cd(2);
+          TH1D* frame = (TH1D*)hT->Clone(("ratioFrame_"+tag).c_str());
+          frame->Reset();
+          frame->GetYaxis()->SetTitle("Unfolded / Truth");
+          frame->GetYaxis()->SetRangeUser(0.5, 1.5);
+          frame->Draw();
+          for (int ir = 0; ir < nSVD; ++ir) {
+            TH1D* r = (TH1D*)unfoldedSVD[ir]->Clone(Form("ratioSVD_%d_%s", kRegValues[ir], tag.c_str()));
+            r->Divide(hT);
+            r->Draw(ir==0 ? "E1" : "E1 SAME");
+          }
+          TLine* ln = new TLine(frame->GetXaxis()->GetXmin(), 1.05,
+                                frame->GetXaxis()->GetXmax(), 1.05);
+          ln->SetLineStyle(2); ln->SetLineColor(kGray+1); ln->Draw();
+          ln = new TLine(frame->GetXaxis()->GetXmin(), 0.95,
+                         frame->GetXaxis()->GetXmax(), 0.95);
+          ln->SetLineStyle(2); ln->SetLineColor(kGray+1); ln->Draw();
+
+          const string tagfile = R + "_" + C + Form("_ptlead%.0f", cut);
+          const string rootPath = string(outDir) + "/unfold_response_" + tagfile + ".root";
+          const string pdfPath  = string(outDir) + "/closure_" + tagfile + ".pdf";
+
+          TFile* outf = TFile::Open(rootPath.c_str(), "RECREATE");
+          hRespRecoVsTruth->Write();
+          response.Write();
+          hMeasTrain->Write(); hTrueTrain->Write();
+          hMeasTest->Write();  hTrueTest->Write();
+          for (auto* u : unfoldedSVD) if (u) u->Write();
+          outf->Close();
+
+          c->SaveAs(pdfPath.c_str());
+
+          // cleanup
+          delete c;
+          delete hM; delete hT;
+          for (auto* u: unfoldedSVD) delete u;
+        } // SVD unfolding
 
         
         // cleanup
