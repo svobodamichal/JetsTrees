@@ -27,7 +27,23 @@ const double CUT_NEUTRAL_FRACTION = 0.95;
 // pT_lead thresholds (on reco-level leading particle)
 const int    N_LEAD_THR = 4;
 const double PTLEAD_THR[N_LEAD_THR] = {0.0, 5.0, 7.0, 9.0};
+
 // =========================================================
+//  Analysis binning (same as unfolding / embedding)
+// =========================================================
+
+// reco (measured) binning
+static const int nbins_meas = 24;
+static const double bin_meas_edges[nbins_meas+1] = {
+  -100,-80,-60,-40,-20,-10,-5,-2.5,0,2.5,5,7.5,10,12.5,15,17.5,
+  20,22.5,25,27.5,30,35,40,50,60
+};
+
+// truth (MC) binning
+static const int nbins_truth = 10;
+static const double bin_truth_edges[nbins_truth+1] = {
+  0,5,10,15,20,25,30,35,40,50,60
+};
 
 void make_efficiencies(const char *infile  = "embedding_merged.root",
                        const char *outfile = "efficiencies.root")
@@ -284,20 +300,122 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
 
                 outTag[it]->cd();
 
-                // Matching efficiency ε_match(mc) = num / den
+                double thr = PTLEAD_THR[it];
+
+                TString tagDirName;
+                tagDirName.Form("%s_%s_ptlead%.0f", rname.c_str(), cname.c_str(), thr);
+
+                // ------------------------------------------------------------------
+                // 1) (Optional) fine-binned efficiencies for writing to the ROOT file
+                // ------------------------------------------------------------------
                 h_match_mc_eff[it]->Divide(h_match_mc_num[it],
                                         h_match_mc_den[it],
                                         1.0, 1.0, "b");
 
-                // Trigger efficiency ε_trig(reco) = num / den
                 h_trig_eff[it]->Divide(h_trig_num[it],
                                     h_trig_den[it],
                                     1.0, 1.0, "b");
 
-                // Purity P(reco) = num / den
                 h_pur_eff[it]->Divide(h_pur_num[it],
                                     h_pur_den[it],
                                     1.0, 1.0, "b");
+
+                // -----------------------------------------------------------
+                // 2) REBIN numerator & denominator, then compute efficiency
+                // -----------------------------------------------------------
+
+                // --- Matching efficiency in TRUTH binning ---
+                TH1D *h_match_mc_den_reb = (TH1D*)h_match_mc_den[it]->Rebin(
+                    nbins_truth,
+                    Form("h_match_mc_den_reb_%s", tagDirName.Data()),
+                    bin_truth_edges);
+
+                TH1D *h_match_mc_num_reb = (TH1D*)h_match_mc_num[it]->Rebin(
+                    nbins_truth,
+                    Form("h_match_mc_num_reb_%s", tagDirName.Data()),
+                    bin_truth_edges);
+
+                TH1D *h_match_mc_eff_reb = (TH1D*)h_match_mc_num_reb->Clone(
+                    Form("h_match_mc_eff_reb_%s", tagDirName.Data()));
+                h_match_mc_eff_reb->SetTitle("Matching efficiency vs p_{T}^{MC}");
+                h_match_mc_eff_reb->Divide(h_match_mc_num_reb,
+                                        h_match_mc_den_reb,
+                                        1.0, 1.0, "b");
+                h_match_mc_eff_reb->SetDirectory(0);
+
+                TCanvas* cMatch = new TCanvas(
+                    Form("cMatch_%s", tagDirName.Data()),
+                    "Matching efficiency (rebinned)", 800, 600);
+                h_match_mc_eff_reb->SetLineColor(kBlue+1);
+                h_match_mc_eff_reb->SetMarkerColor(kBlue+1);
+                h_match_mc_eff_reb->SetMarkerStyle(20);
+                h_match_mc_eff_reb->GetXaxis()->SetTitle("p_{T}^{MC} [GeV]");
+                h_match_mc_eff_reb->GetYaxis()->SetTitle("Matching efficiency");
+                h_match_mc_eff_reb->Draw("E1");
+                cMatch->SaveAs(Form("QA_match_eff_%s.pdf", tagDirName.Data()));
+                delete cMatch;
+
+                // --- Trigger efficiency in MEASURED binning ---
+                TH1D *h_trig_den_reb = (TH1D*)h_trig_den[it]->Rebin(
+                    nbins_meas,
+                    Form("h_trig_den_reb_%s", tagDirName.Data()),
+                    bin_meas_edges);
+
+                TH1D *h_trig_num_reb = (TH1D*)h_trig_num[it]->Rebin(
+                    nbins_meas,
+                    Form("h_trig_num_reb_%s", tagDirName.Data()),
+                    bin_meas_edges);
+
+                TH1D *h_trig_eff_reb = (TH1D*)h_trig_num_reb->Clone(
+                    Form("h_trig_eff_reb_%s", tagDirName.Data()));
+                h_trig_eff_reb->SetTitle("Trigger efficiency vs p_{T}^{corr}");
+                h_trig_eff_reb->Divide(h_trig_num_reb,
+                                    h_trig_den_reb,
+                                    1.0, 1.0, "b");
+                h_trig_eff_reb->SetDirectory(0);
+
+                TCanvas* cTrig = new TCanvas(
+                    Form("cTrig_%s", tagDirName.Data()),
+                    "Trigger efficiency (rebinned)", 800, 600);
+                h_trig_eff_reb->SetLineColor(kRed+1);
+                h_trig_eff_reb->SetMarkerColor(kRed+1);
+                h_trig_eff_reb->SetMarkerStyle(20);
+                h_trig_eff_reb->GetXaxis()->SetTitle("p_{T}^{reco,corr} [GeV]");
+                h_trig_eff_reb->GetYaxis()->SetTitle("Trigger efficiency");
+                h_trig_eff_reb->Draw("E1");
+                cTrig->SaveAs(Form("QA_trig_eff_%s.pdf", tagDirName.Data()));
+                delete cTrig;
+
+                // --- Purity in MEASURED binning ---
+                TH1D *h_pur_den_reb = (TH1D*)h_pur_den[it]->Rebin(
+                    nbins_meas,
+                    Form("h_pur_den_reb_%s", tagDirName.Data()),
+                    bin_meas_edges);
+
+                TH1D *h_pur_num_reb = (TH1D*)h_pur_num[it]->Rebin(
+                    nbins_meas,
+                    Form("h_pur_num_reb_%s", tagDirName.Data()),
+                    bin_meas_edges);
+
+                TH1D *h_pur_eff_reb = (TH1D*)h_pur_num_reb->Clone(
+                    Form("h_pur_eff_reb_%s", tagDirName.Data()));
+                h_pur_eff_reb->SetTitle("Purity vs p_{T}^{corr}");
+                h_pur_eff_reb->Divide(h_pur_num_reb,
+                                    h_pur_den_reb,
+                                    1.0, 1.0, "b");
+                h_pur_eff_reb->SetDirectory(0);
+
+                TCanvas* cPur = new TCanvas(
+                    Form("cPur_%s", tagDirName.Data()),
+                    "Purity (rebinned)", 800, 600);
+                h_pur_eff_reb->SetLineColor(kGreen+2);
+                h_pur_eff_reb->SetMarkerColor(kGreen+2);
+                h_pur_eff_reb->SetMarkerStyle(20);
+                h_pur_eff_reb->GetXaxis()->SetTitle("p_{T}^{reco,corr} [GeV]");
+                h_pur_eff_reb->GetYaxis()->SetTitle("Purity");
+                h_pur_eff_reb->Draw("E1");
+                cPur->SaveAs(Form("QA_purity_%s.pdf", tagDirName.Data()));
+                delete cPur;
             }
         } // end loop over centrality dirs
     } // end loop over R dirs

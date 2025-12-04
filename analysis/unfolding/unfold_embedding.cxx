@@ -27,7 +27,7 @@ static const int kBayesIters[] = {1, 4, 5, 7};
 static const int kNBayesIters = sizeof(kBayesIters)/sizeof(kBayesIters[0]);
 
 static const double kTestFrac = 0.50;     // 50/50 split
-static const uint32_t kSeed    = 12345;   // deterministic split
+static const UInt_t kSeed     = 12345;    // deterministic split
 
 static const double kPtLeadCuts[] = {0.0, 5.0, 7.0, 9.0};
 static const int    kNPtLeadCuts  = sizeof(kPtLeadCuts)/sizeof(kPtLeadCuts[0]);
@@ -35,15 +35,19 @@ static const int    kNPtLeadCuts  = sizeof(kPtLeadCuts)/sizeof(kPtLeadCuts[0]);
 // measured & truth binning
 static const int nbins_meas = 24;
 static const double bin_meas_edges[nbins_meas+1] = {
-  -100,-80,-60,-40,-20,-10,-5,-2.5,0,2.5,5,7.5,10,12.5,15,17.5,20,22.5,25,27.5,30,35,40,50,60
+  -100,-80,-60,-40,-20,-10,-5,-2.5,0,2.5,5,7.5,10,12.5,15,17.5,
+  20,22.5,25,27.5,30,35,40,50,60
 };
+
 static const int nbins_truth = 10;
 static const double bin_truth_edges[nbins_truth+1] = {
   0,5,10,15,20,25,30,35,40,50,60
 };
 
-static const vector<string> kCentralities = {"CENT_0_10", "MID_20_40", "PERI_60_80"};
-static const vector<string> kRadii        = {"R0.2", "R0.3", "R0.4"};
+static const vector<string> kCentralities =
+  {"CENT_0_10", "MID_20_40", "PERI_60_80"};
+static const vector<string> kRadii =
+  {"R0.2", "R0.3", "R0.4"};
 
 // ------------------ jet-quality cuts -------------------------
 
@@ -62,8 +66,9 @@ static void EnsureDir(const string& path){
     gSystem->mkdir(path.c_str(), /*recursive=*/true);
 }
 
+// Main macro: builds closure + full-statistics responses
 void unfold_embedding(const char* inputFile,
-            const char* outDir)
+                      const char* outDir)
 {
   gStyle->SetOptStat(0);
   EnsureDir(outDir);
@@ -78,13 +83,17 @@ void unfold_embedding(const char* inputFile,
   TFile* fout = TFile::Open(outRootPath.c_str(), "RECREATE");
   if (!fout || fout->IsZombie()) {
     cout << "[error] Cannot create output file: " << outRootPath << endl;
-    fin->Close();
-    delete fin;
+    fin->Close(); delete fin;
     return;
   }
 
+  cout << "Input embedding : " << inputFile  << endl;
+  cout << "Output responses: " << outRootPath << endl;
+
   // loop R, centrality, ptlead
-  for (const auto& R : kRadii) {
+  for (size_t iR = 0; iR < kRadii.size(); ++iR) {
+    const string R = kRadii[iR];
+
     // parse numeric R to choose area cut
     double Rval = 0.0;
     if (sscanf(R.c_str(), "R%lf", &Rval) != 1) {
@@ -96,7 +105,8 @@ void unfold_embedding(const char* inputFile,
     else if (Rval < 0.35) areaMin = CUT_AREA_03; // ~0.3
     else                  areaMin = CUT_AREA_04; // ~0.4
 
-    for (const auto& C : kCentralities) {
+    for (size_t iC = 0; iC < kCentralities.size(); ++iC) {
+      const string C = kCentralities[iC];
 
       const string treePath = R + "/" + C + "/JetTree";
       TTree* tr = dynamic_cast<TTree*>(fin->Get(treePath.c_str()));
@@ -140,15 +150,20 @@ void unfold_embedding(const char* inputFile,
         continue;
       }
 
+      cout << "\n=== " << R << "  " << C << " (entries: " << n << ") ===\n";
+
       for (int ic = 0; ic < kNPtLeadCuts; ++ic) {
         const double cut = kPtLeadCuts[ic];
-        const string tag = R + "_" + C + Form("_ptlead%.0f", cut);
+        const string tag     = R + "_" + C + Form("_ptlead%.0f", cut);
+        const string tagfile = tag;
+
+        cout << "  >> pTlead >= " << cut << " GeV  (tag " << tag << ")\n";
 
         // --- histos: train/test for closure ---
-        TH1D* hMeasTrain = new TH1D(("hMeas_"+tag).c_str(),
+        TH1D* hMeasTrain = new TH1D(("hMeasTrain_"+tag).c_str(),
             ";reco p_{T}^{corr} [GeV];dN/dp_{T}",
             nbins_meas, bin_meas_edges);
-        TH1D* hTrueTrain = new TH1D(("hTrue_"+tag).c_str(),
+        TH1D* hTrueTrain = new TH1D(("hTrueTrain_"+tag).c_str(),
             ";mc p_{T} [GeV];dN/dp_{T}",
             nbins_truth, bin_truth_edges);
         TH1D* hMeasTest  = (TH1D*)hMeasTrain->Clone(("hMeasTest_"+tag).c_str());
@@ -159,12 +174,30 @@ void unfold_embedding(const char* inputFile,
         hMeasTest ->SetDirectory(0);
         hTrueTest ->SetDirectory(0);
 
-        // --- response matrix ---
-        TH2D* hRespRecoVsTruth = new TH2D(("hResp_"+tag).c_str(),
+        // --- full-stat histos (no split) ---
+        TH1D* hMeasFull = new TH1D(("hMeasFull_"+tag).c_str(),
+            ";reco p_{T}^{corr} [GeV];dN/dp_{T}",
+            nbins_meas, bin_meas_edges);
+        TH1D* hTrueFull = new TH1D(("hTrueFull_"+tag).c_str(),
+            ";mc p_{T} [GeV];dN/dp_{T}",
+            nbins_truth, bin_truth_edges);
+        hMeasFull->SetDirectory(0);
+        hTrueFull->SetDirectory(0);
+
+        // --- response matrices ---
+        // For closure (train only)
+        TH2D* hRespTrain = new TH2D(("hRespTrain_"+tag).c_str(),
             ";p_{T}^{reco,corr};p_{T}^{mc}",
             nbins_meas, bin_meas_edges,
             nbins_truth, bin_truth_edges);
-        hRespRecoVsTruth->SetDirectory(0);
+        hRespTrain->SetDirectory(0);
+
+        // For full-statistics response (train+test together)
+        TH2D* hRespFull = new TH2D(("hRespFull_"+tag).c_str(),
+            ";p_{T}^{reco,corr};p_{T}^{mc}",
+            nbins_meas, bin_meas_edges,
+            nbins_truth, bin_truth_edges);
+        hRespFull->SetDirectory(0);
 
         // --- prior (truth-only, using *all* jets passing truth-side cuts) ---
         TH1D* hPrior = new TH1D(("hPrior_"+tag).c_str(),
@@ -177,7 +210,7 @@ void unfold_embedding(const char* inputFile,
         // event loop
         for (Long64_t i = 0; i < n; ++i) {
           if ((i % 200000) == 0)
-            cout << "  ["<< tag <<"] " << i << "/" << n << "\r" << std::flush;
+            cout << "    ["<< tag <<"] " << i << "/" << n << "\r" << std::flush;
 
           tr->GetEntry(i);
 
@@ -197,9 +230,15 @@ void unfold_embedding(const char* inputFile,
           // dual ptlead cut (both reco & MC)
           if (!(reco_pt_lead >= cut && mc_pt_lead >= cut)) continue;
 
+          // ===== full-statistics response (no split) =====
+          hRespFull->Fill(reco_pt_corr, mc_pt, w);
+          hMeasFull->Fill(reco_pt_corr, w);
+          hTrueFull->Fill(mc_pt,        w);
+
+          // ===== closure split: train vs test =====
           const bool train = (rng.Uniform() > kTestFrac);
           if (train) {
-            hRespRecoVsTruth->Fill(reco_pt_corr, mc_pt, w);
+            hRespTrain->Fill(reco_pt_corr, mc_pt, w);
             hMeasTrain->Fill(reco_pt_corr, w);
             hTrueTrain->Fill(mc_pt,        w);
           } else {
@@ -209,40 +248,54 @@ void unfold_embedding(const char* inputFile,
         }
         cout << endl;
 
+        // normalize prior to training truth (as before)
         double intPrior = hPrior->Integral();
         double intTrue  = hTrueTrain->Integral();
         if (intPrior > 0.0 && intTrue > 0.0) {
           hPrior->Scale(intTrue / intPrior);
-}
+        }
 
-        // --- build response ---
-        RooUnfoldResponse response(hMeasTrain, hTrueTrain, hRespRecoVsTruth);
-        response.SetName(("response_"+tag).c_str());
+        cout << "    Integral(Truth train) = " << hTrueTrain->Integral(0, -1) << endl;
+        cout << "    Integral(Meas  train) = " << hMeasTrain->Integral(0, -1) << endl;
+        cout << "    Integral(Truth test ) = " << hTrueTest ->Integral(0, -1) << endl;
+        cout << "    Integral(Meas  test ) = " << hMeasTest ->Integral(0, -1) << endl;
+        cout << "    Integral(Prior      ) = " << hPrior    ->Integral(0, -1) << endl;
+        cout << "    Integral(Truth full)  = " << hTrueFull ->Integral(0, -1) << endl;
+        cout << "    Integral(Meas  full)  = " << hMeasFull ->Integral(0, -1) << endl;
 
-        // --- unfolding with explicit prior ---
-        vector<TH1D*> unfolded(kNBayesIters, nullptr);
+        // --- build responses ---
+
+        // Full-statistics response: this one you will use for unfolding DATA
+        RooUnfoldResponse response_full(hMeasFull, hTrueFull, hRespFull);
+        response_full.SetName(("response_full_"+tag).c_str());
+
+        // Closure response (train-only): used only for unfolding test sample
+        RooUnfoldResponse response_closure(hMeasTrain, hTrueTrain, hRespTrain);
+        response_closure.SetName(("response_closure_"+tag).c_str());
+
+        // --- unfolding (closure) with explicit prior ---
+        vector<TH1D*> unfolded(kNBayesIters, 0);
         for (int ib = 0; ib < kNBayesIters; ++ib) {
-          // RooUnfoldBayes(res, meas, nIter, smoothit=false, prior)
-          RooUnfoldBayes u(&response, hMeasTest,
+          RooUnfoldBayes u(&response_closure, hMeasTest,
                            kBayesIters[ib], false, hPrior);
           TH1D* hunf = (TH1D*)u.Hunfold();
-          hunf->SetDirectory(nullptr);
+          hunf->SetDirectory(0);
           hunf->SetName(Form("Unfolded_%s_iter%d", tag.c_str(), kBayesIters[ib]));
           unfolded[ib] = hunf;
         }
 
         // Rebin unfolded to truth binning (for plotting & ratio)
-        vector<TH1D*> unfoldedTruth(kNBayesIters, nullptr);
+        vector<TH1D*> unfoldedTruth(kNBayesIters, 0);
         for (int ib = 0; ib < kNBayesIters; ++ib) {
           if (!unfolded[ib]) continue;
           unfoldedTruth[ib] = (TH1D*)unfolded[ib]->Rebin(
               nbins_truth,
               Form("UnfTruthBins_%d_%s", kBayesIters[ib], tag.c_str()),
               bin_truth_edges);
-          unfoldedTruth[ib]->SetDirectory(nullptr);
+          unfoldedTruth[ib]->SetDirectory(0);
         }
 
-        // ========================= PLOTTING =========================
+        // ========================= PLOTTING (closure) =========================
         TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1200);
         c->Divide(1,2);
 
@@ -251,7 +304,6 @@ void unfold_embedding(const char* inputFile,
         gPad->SetLogy();
 
         TH1D* hT_plot = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
-      //  hT_plot->Scale(1.0, "width");
         hT_plot->SetMarkerStyle(20);
         hT_plot->SetLineColor(kBlack);
 
@@ -259,7 +311,6 @@ void unfold_embedding(const char* inputFile,
             nbins_truth,
             ("hMeasTruthBins_"+tag).c_str(),
             bin_truth_edges);
-      //  hM_truth->Scale(1.0, "width");
         hM_truth->SetMarkerStyle(24);
         hM_truth->SetLineColor(kBlue+1);
 
@@ -274,7 +325,6 @@ void unfold_embedding(const char* inputFile,
         for (int ib = 0; ib < kNBayesIters; ++ib) {
           TH1D* w = unfoldedTruth[ib];
           if (!w) continue;
-       //   w->Scale(1.0, "width");
           w->SetMarkerStyle(20);
           w->SetMarkerColor(kMagenta + ib);
           w->SetLineColor(kMagenta + ib);
@@ -285,9 +335,9 @@ void unfold_embedding(const char* inputFile,
 
         // ---------- bottom pad: ratio unfolded / truth ----------
         c->cd(2);
-        gPad->SetGridy();  // optional, just cosmetic
+        gPad->SetGridy();
 
-        TH1D* firstRatio = nullptr;
+        TH1D* firstRatio = 0;
 
         for (int ib = 0; ib < kNBayesIters; ++ib) {
           TH1D* hunf_reb = unfoldedTruth[ib];
@@ -295,20 +345,20 @@ void unfold_embedding(const char* inputFile,
 
           TH1D* r = (TH1D*)hunf_reb->Clone(
               Form("ratio_%d_%s", kBayesIters[ib], tag.c_str()));
-          r->Divide(hTrueTest);       // bin–by–bin unfolded / truth
+          r->SetDirectory(0);
+          r->Divide(hTrueTest);
 
           if (!firstRatio) {
             firstRatio = r;
             firstRatio->SetTitle("");
             firstRatio->GetYaxis()->SetTitle("Unfolded / Truth");
             firstRatio->GetYaxis()->SetRangeUser(0.0, 2.0);
-            firstRatio->Draw("E1");   // defines axes
+            firstRatio->Draw("E1");
           } else {
             r->Draw("E1 SAME");
           }
         }
 
-        // draw guide lines at 0.95 and 1.05 if we actually drew something
         if (firstRatio) {
           double xmin = firstRatio->GetXaxis()->GetXmin();
           double xmax = firstRatio->GetXaxis()->GetXmax();
@@ -321,16 +371,23 @@ void unfold_embedding(const char* inputFile,
         }
 
         // ---------- save ----------
-        const string tagfile = R + "_" + C + Form("_ptlead%.0f", cut);
         const string pdfPath = string(outDir) + "/closure_" + tagfile + ".pdf";
 
         // create a directory for this (R, centrality, ptlead) inside fout
         TDirectory* d = fout->mkdir(tagfile.c_str());
+        if (!d) d = fout->GetDirectory(tagfile.c_str());
         d->cd();
 
-        // give simple, consistent object names inside the directory
-        hRespRecoVsTruth->Write("hRespRecoVsTruth");
-        response.Write("response");
+        // Store full-statistics response (for data)
+        hRespFull->Write("hRespRecoVsTruth_full");
+        response_full.Write("response");  // <-- THIS is what unfold_data reads
+
+        hMeasFull->Write("hMeasFull");
+        hTrueFull->Write("hTrueFull");
+
+        // Store closure response + components
+        hRespTrain->Write("hRespRecoVsTruth_train");
+        response_closure.Write("response_closure");
 
         hMeasTrain->Write("hMeasTrain");
         hTrueTrain->Write("hTrueTrain");
@@ -347,31 +404,39 @@ void unfold_embedding(const char* inputFile,
           }
         }
 
-        // save closure plot as before
         c->SaveAs(pdfPath.c_str());
 
         // ---------- cleanup ----------
         delete c;
         delete hT_plot;
         delete hM_truth;
-        delete hRespRecoVsTruth;
+        delete hRespTrain;
+        delete hRespFull;
         delete hMeasTrain;
         delete hTrueTrain;
         delete hMeasTest;
         delete hTrueTest;
+        delete hMeasFull;
+        delete hTrueFull;
         delete hPrior;
         delete leg;
-        for (auto* u  : unfolded)      delete u;
-        for (auto* ut : unfoldedTruth) delete ut;
+        for (size_t ib = 0; ib < unfolded.size(); ++ib) {
+          if (unfolded[ib]) delete unfolded[ib];
+        }
+        for (size_t ib = 0; ib < unfoldedTruth.size(); ++ib) {
+          if (unfoldedTruth[ib]) delete unfoldedTruth[ib];
+        }
       } // ptlead cuts
     } // centralities
   } // radii
 
-  cout << "Done. Outputs in: " << outDir << endl;
-
+  fout->Write();
   fout->Close();
   delete fout;
 
   fin->Close();
   delete fin;
+
+  cout << "\nDone. Responses (closure + full) written to: "
+       << outRootPath << endl;
 }
