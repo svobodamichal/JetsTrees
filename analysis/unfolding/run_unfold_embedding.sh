@@ -5,12 +5,12 @@ set -euo pipefail
 BASE="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees"
 SIF="/gpfs/mnt/gpfs01/star/pwg/prozorov/singularity/roounfold.sif"
 #SIF="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees/root_latest.sif"
-MACRO="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees/analysis/unfolding/unfold_embedding.cxx"
+MACRO="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees/analysis/unfolding/unfold_embedding_test.cxx"
 # ----------------------------------------------
 
 METHOD="${1:-Bayes}"
 IN="${2:-$BASE/trees/merged_all/embedding_merged.root}"
-OUT="${3:-$BASE/analysis/unfolding/out_test_SVD}"
+OUT="${3:-$BASE/analysis/unfolding/out_test_Bayes_new}"
 
 if [[ ! -f "$IN" ]]; then
   echo "Input not found: $IN"
