@@ -1,5 +1,6 @@
 #include "RooUnfoldBayes.h"
 #include "RooUnfoldResponse.h"
+#include "RooUnfoldSvd.h"
 
 #include "TFile.h"
 #include "TTree.h"
@@ -63,8 +64,12 @@ static void EnsureDir(const string& path){
 }
 
 void unfold_embedding(const char* inputFile,
-            const char* outDir)
+            const char* outDir, const char* method = "Bayes")
 {
+   std::string m(method);
+
+  std::cout << ">>> Unfolding method = " << m << std::endl;
+
   gStyle->SetOptStat(0);
   EnsureDir(outDir);
 
@@ -219,6 +224,13 @@ void unfold_embedding(const char* inputFile,
         RooUnfoldResponse response(hMeasTrain, hTrueTrain, hRespRecoVsTruth);
         response.SetName(("response_"+tag).c_str());
 
+
+        // --- BAYESIAN unfolding  ---
+
+      if (m == "Bayes") {
+          cout << "Doing Bayesian unfolding..." << endl;
+        
+        
         // --- unfolding with explicit prior ---
         vector<TH1D*> unfolded(kNBayesIters, nullptr);
         for (int ib = 0; ib < kNBayesIters; ++ib) {
@@ -322,7 +334,7 @@ void unfold_embedding(const char* inputFile,
 
         // ---------- save ----------
         const string tagfile = R + "_" + C + Form("_ptlead%.0f", cut);
-        const string pdfPath = string(outDir) + "/closure_" + tagfile + ".pdf";
+        const string pdfPath = string(outDir) + "/Bayes_closure_" + tagfile + ".pdf";
 
         // create a directory for this (R, centrality, ptlead) inside fout
         TDirectory* d = fout->mkdir(tagfile.c_str());
@@ -350,7 +362,7 @@ void unfold_embedding(const char* inputFile,
         // save closure plot as before
         c->SaveAs(pdfPath.c_str());
 
-        // ---------- cleanup ----------
+      // ---------- cleanup ----------
         delete c;
         delete hT_plot;
         delete hM_truth;
@@ -363,6 +375,169 @@ void unfold_embedding(const char* inputFile,
         delete leg;
         for (auto* u  : unfolded)      delete u;
         for (auto* ut : unfoldedTruth) delete ut;
+
+      } // end of BAYESIAN unfolding
+
+
+    // --- SVD unfolding ---
+      if (m == "SVD") {
+          cout << "Doing SVD unfolding..." << endl;
+          const int kRegValues[] = {2, 3, 4, 5, 6, 8, 10};
+          const int nSVD = sizeof(kRegValues)/sizeof(kRegValues[0]);
+
+          vector<TH1D*> unfoldedSVD(nSVD, nullptr);
+          for (int ir = 0; ir < nSVD; ++ir) {
+            const int reg = kRegValues[ir];
+            RooUnfoldSvd u(&response, hMeasTest, reg);
+            // optionally switch on regularization via SVD settings:
+            // u.SetRegParam(reg); // not necessary with ctor but shown for clarity
+            TH1D* hunf = dynamic_cast<TH1D*>(u.Hunfold());
+            if (!hunf) {
+              cout << "[error] SVD unfolding failed for reg=" << reg << endl;
+              continue;
+            }
+            hunf->SetDirectory(nullptr);
+            hunf->SetName(Form("Unfolded_SVD_%s_reg%d", tag.c_str(), reg));
+            unfoldedSVD[ir] = hunf;
+          }
+
+          // Rebin unfolded to truth binning (for plotting & ratio)
+          vector<TH1D*> unfoldedTruth(nSVD, nullptr);
+          for (int iSVD = 0; iSVD < nSVD; ++iSVD) {
+            if (!unfoldedSVD[iSVD]) continue;
+            unfoldedTruth[iSVD] = (TH1D*)unfoldedSVD[iSVD]->Rebin(
+                nbins_truth,
+                Form("UnfTruthBins_%d_%s", kRegValues[iSVD], tag.c_str()),
+                bin_truth_edges);
+            unfoldedTruth[iSVD]->SetDirectory(nullptr);
+        }
+
+        // ========================= PLOTTING =========================
+        TCanvas* c2 = new TCanvas(("c_"+tag).c_str(), "", 800, 1200);
+        c2->Divide(1,2);
+
+          // ---------- top pad: shapes in TRUTH binning ----------
+        c2->cd(1);
+        gPad->SetLogy();
+
+        TH1D* hT_plot_svd = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
+        //  hT_plot->Scale(1.0, "width");
+        hT_plot_svd->SetMarkerStyle(20);
+        hT_plot_svd->SetLineColor(kBlack);
+
+        TH1D* hM_truth_svd = (TH1D*)hMeasTest->Rebin(
+            nbins_truth,
+            ("hMeasTruthBins_"+tag).c_str(),
+            bin_truth_edges);
+      //  hM_truth->Scale(1.0, "width");
+        hM_truth_svd->SetMarkerStyle(24);
+        hM_truth_svd->SetLineColor(kBlue+1);
+
+        hT_plot_svd->GetXaxis()->SetTitle("p_{T} [GeV]");
+        hT_plot_svd->Draw("E1");
+        hM_truth_svd->Draw("E1 SAME");
+
+        TLegend* leg = new TLegend(0.58,0.58,0.88,0.88);
+        leg->AddEntry(hT_plot_svd,  "Truth (test)",    "lp");
+        leg->AddEntry(hM_truth_svd, "Measured (test)", "lp");
+
+        for (int iSVD = 0; iSVD < nSVD; ++iSVD) {
+          TH1D* w = unfoldedTruth[iSVD];
+          if (!w) continue;
+       //   w->Scale(1.0, "width");
+          w->SetMarkerStyle(20);
+          w->SetMarkerColor(kMagenta + iSVD);
+          w->SetLineColor(kMagenta + iSVD);
+          w->Draw("E1 SAME");
+          leg->AddEntry(w, Form("RegValue %d it.", kRegValues[iSVD]), "lp");
+        }
+        leg->Draw();
+        // ---------- bottom pad: ratio unfolded / truth ----------
+        c2->cd(2);
+        gPad->SetGridy();  // optional, just cosmetic
+
+        TH1D* firstRatio = nullptr;
+
+        for (int iSVD = 0; iSVD < nSVD; ++iSVD) {
+          TH1D* hunf_reb = unfoldedTruth[iSVD];
+          if (!hunf_reb) continue;
+
+          TH1D* r = (TH1D*)hunf_reb->Clone(
+              Form("ratio_%d_%s", kRegValues[iSVD], tag.c_str()));
+          r->Divide(hTrueTest);       // bin–by–bin unfolded / truth
+
+          if (!firstRatio) {
+            firstRatio = r;
+            firstRatio->SetTitle("");
+            firstRatio->GetYaxis()->SetTitle("Unfolded / Truth");
+            firstRatio->GetYaxis()->SetRangeUser(0.0, 2.0);
+            firstRatio->Draw("E1");   // defines axes
+          } else {
+            r->Draw("E1 SAME");
+          }
+        }
+
+        // draw guide lines at 0.95 and 1.05 if we actually drew something
+        if (firstRatio) {
+          double xmin = firstRatio->GetXaxis()->GetXmin();
+          double xmax = firstRatio->GetXaxis()->GetXmax();
+
+          TLine* ln1 = new TLine(xmin, 1.05, xmax, 1.05);
+          ln1->SetLineStyle(2); ln1->SetLineColor(kGray+1); ln1->Draw();
+
+          TLine* ln2 = new TLine(xmin, 0.95, xmax, 0.95);
+          ln2->SetLineStyle(2); ln2->SetLineColor(kGray+1); ln2->Draw();
+        }
+
+        // ---------- save ----------
+        const string tagfile = R + "_" + C + Form("_ptlead%.0f", cut);
+        const string pdfPath = string(outDir) + "/SVD_closure_" + tagfile + ".pdf";
+
+        // create a directory for this (R, centrality, ptlead) inside fout
+        TDirectory* d = fout->mkdir(tagfile.c_str());
+        d->cd();
+
+        // give simple, consistent object names inside the directory
+        hRespRecoVsTruth->Write("hRespRecoVsTruth");
+        response.Write("response");
+
+        hMeasTrain->Write("hMeasTrain");
+        hTrueTrain->Write("hTrueTrain");
+        hMeasTest ->Write("hMeasTest");
+        hTrueTest ->Write("hTrueTest");
+        hPrior    ->Write("hPrior");  // save the prior used
+
+        // optionally save unfolded spectra for closure checks
+        for (int iSVD = 0; iSVD < nSVD; ++iSVD) {
+          if (unfoldedSVD[iSVD]) {
+            unfoldedSVD[iSVD]->Write(
+              Form("Unfolded_SVD_iter%d", kRegValues[iSVD])
+            );
+          }
+        }
+
+        // save closure plot as before
+        c2->SaveAs(pdfPath.c_str());
+
+
+          // ---------- cleanup ----------
+        delete c2;
+        delete hT_plot_svd;
+        delete hM_truth_svd;
+        delete hRespRecoVsTruth;
+        delete hMeasTrain;
+        delete hTrueTrain;
+        delete hMeasTest;
+        delete hTrueTest;
+        delete hPrior;
+        delete leg;
+        for (auto* u  : unfoldedSVD)      delete u;
+        for (auto* ut : unfoldedTruth) delete ut;
+
+        } //--- end of SVD unfolding ---
+
+
+      
       } // ptlead cuts
     } // centralities
   } // radii

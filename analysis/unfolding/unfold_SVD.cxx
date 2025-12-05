@@ -46,7 +46,7 @@ static const double bin_truth_edges[nbins_truth+1] = {
 static const vector<string> kCentralities = {"CENT_0_10", "MID_20_40", "PERI_60_80"};
 static const vector<string> kRadii        = {"R0.2", "R0.3", "R0.4"};
 
-const bool doSVD = false; // switch between Bayes and SVD unfolding
+const bool doSVD = true; // switch between Bayes and SVD unfolding
 const int kRegValues[] = {2, 3, 4, 5, 6, 8, 10};
 const int nSVD = sizeof(kRegValues)/sizeof(kRegValues[0]);
 
@@ -198,7 +198,7 @@ void unfold_SVD(const char* inputFile,
             }
 
               // plot
-            TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1200);
+            TCanvas* c = new TCanvas(("c_Bayes"+tag).c_str(), "", 800, 1200);
             c->Divide(1,2);
 
             c->cd(1); gPad->SetLogy();
@@ -256,7 +256,15 @@ void unfold_SVD(const char* inputFile,
             for (auto* u : unfolded) if (u) u->Write();
             outf->Close();
 
+           
+
+
             c->SaveAs(pdfPath.c_str());
+
+            delete outf;
+            delete c;
+            delete hM; delete hT;
+            for (auto* u: unfolded) delete u;
         
         if (doSVD) {
           cout << "Doing SVD unfolding..." << endl;
@@ -281,17 +289,17 @@ void unfold_SVD(const char* inputFile,
           c2->Divide(1,2);
 
           c2->cd(1); gPad->SetLogy();
-          TH1D* hM = (TH1D*)hMeasTest->Clone(("hMeasW_"+tag).c_str());
-          TH1D* hT = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
-          hM->Scale(1.0, "width"); hT->Scale(1.0, "width");
-          hM->SetMarkerStyle(24); hM->SetLineColor(kBlue+1);
-          hT->SetMarkerStyle(20); hT->SetLineColor(kBlack);
-          hT->Draw("E1");
-          hM->Draw("E1 SAME");
+          TH1D* hM_svd = (TH1D*)hMeasTest->Clone(("hMeasW_SVD_"+tag).c_str());
+          TH1D* hT_svd = (TH1D*)hTrueTest->Clone(("hTrueW_SVD_"+tag).c_str());
+          hM_svd->Scale(1.0, "width"); hT_svd->Scale(1.0, "width");
+          hM_svd->SetMarkerStyle(24); hM_svd->SetLineColor(kBlue+1);
+          hT_svd->SetMarkerStyle(20); hT_svd->SetLineColor(kBlack);
+          hT_svd->Draw("E1");
+          hM_svd->Draw("E1 SAME");
 
           TLegend* leg = new TLegend(0.58,0.58,0.88,0.88);
-          leg->AddEntry(hT, "Truth (test)", "lp");
-          leg->AddEntry(hM, "Measured (test)", "lp");
+          leg->AddEntry(hT_svd, "Truth (test)", "lp");
+          leg->AddEntry(hM_svd, "Measured (test)", "lp");
 
           for (int ir = 0; ir < nSVD; ++ir) {
             TH1D* w = (TH1D*)unfoldedSVD[ir]->Clone(Form("UnfSVDW_%d_%s", kRegValues[ir], tag.c_str()));
@@ -307,14 +315,14 @@ void unfold_SVD(const char* inputFile,
           leg->Draw();
 
           c2->cd(2);
-          TH1D* frame = (TH1D*)hT->Clone(("ratioFrame_"+tag).c_str());
+          TH1D* frame = (TH1D*)hT_svd->Clone(("ratioFrame_"+tag).c_str());
           frame->Reset();
           frame->GetYaxis()->SetTitle("Unfolded / Truth");
           frame->GetYaxis()->SetRangeUser(0.5, 1.5);
           frame->Draw();
           for (int ir = 0; ir < nSVD; ++ir) {
             TH1D* r = (TH1D*)unfoldedSVD[ir]->Clone(Form("ratioSVD_%d_%s", kRegValues[ir], tag.c_str()));
-            r->Divide(hT);
+            r->Divide(hT_svd);
             r->Draw(ir==0 ? "E1" : "E1 SAME");
           }
           TLine* ln = new TLine(frame->GetXaxis()->GetXmin(), 1.05,
@@ -325,33 +333,33 @@ void unfold_SVD(const char* inputFile,
           ln->SetLineStyle(2); ln->SetLineColor(kGray+1); ln->Draw();
 
           const string tagfile = R + "_" + C + Form("_ptlead%.0f", cut);
-          const string rootPath = string(outDir) + "/unfold_response_" + tagfile + ".root";
-          const string pdfPath  = string(outDir) + "/closure_" + tagfile + ".pdf";
+          const string rootPathSVD = string(outDir) + "/unfold_response_SVD_" + tagfile + ".root";
+          const string pdfPathSVD  = string(outDir) + "/closure_SVD_" + tagfile + ".pdf";
 
-          TFile* outf = TFile::Open(rootPath.c_str(), "RECREATE");
+          TFile* outf2 = TFile::Open(rootPathSVD.c_str(), "RECREATE");
           hRespRecoVsTruth->Write();
           response.Write();
           hMeasTrain->Write(); hTrueTrain->Write();
           hMeasTest->Write();  hTrueTest->Write();
           for (auto* u : unfoldedSVD) if (u) u->Write();
-          outf->Close();
+          outf2->Close();
 
-          c->SaveAs(pdfPath.c_str());
+          c2->SaveAs(pdfPathSVD.c_str());
 
           // cleanup
-          delete c;
-          delete hM; delete hT;
+          delete c2;
+          delete hM_svd; delete hT_svd;
           for (auto* u: unfoldedSVD) delete u;
         } // SVD unfolding
 
         
         // cleanup
-        delete c;
-        delete hM; delete hT;
+       // delete c;
+        //delete hM; delete hT;
         delete hRespRecoVsTruth;
         delete hMeasTrain; delete hTrueTrain;
         delete hMeasTest;  delete hTrueTest;
-        for (auto* u: unfolded) delete u;
+       // for (auto* u: unfolded) delete u;
       } // ptlead cuts
     } // centralities
   } // radii
