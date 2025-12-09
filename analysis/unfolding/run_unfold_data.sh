@@ -5,14 +5,16 @@ set -euo pipefail
 # Configuration
 ########################
 
-# Base path as seen *inside* the container
-BASE="/gpfs/mnt/gpfs01/star/pwg/svomich/JetsTrees"
-
-SIF="${BASE}/analysis/unfolding/roounfold.sif"
-
-# Directory where this script lives (macro is assumed to be here as well)
+# Directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MACRO="${BASE}/analysis/unfolding/unfold_data.cxx"
+
+# Base dir = two levels up from unfolding/
+# (i.e. .../JetsTrees, assuming the same structure)
+BASE="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Singularity image and macro, both in the same dir as this script
+SIF="${SCRIPT_DIR}/roounfold.sif"
+MACRO="${SCRIPT_DIR}/unfold_data.cxx"
 
 ########################
 # Arguments
@@ -30,11 +32,11 @@ else
 fi
 
 # 2nd arg: RESPONSE ROOT FILE (single file with all tag directories)
-# adjust the default name to whatever you actually wrote in the embedding macro
-RESP_FILE="${2:-${BASE}/analysis/unfolding/out_embedding/responses_embedding.root}"
+# default: responses from embedding under unfolding/out_embedding
+RESP_FILE="${2:-${SCRIPT_DIR}/out_embedding/responses_embedding.root}"
 
 # 3rd arg: output directory for unfolded data spectra
-OUT_DIR="${3:-${BASE}/analysis/unfolding/out_data}"
+OUT_DIR="${3:-${SCRIPT_DIR}/out_data}"
 
 # 4th arg: number of Bayes iterations
 NITER="${4:-4}"
@@ -45,6 +47,8 @@ NITER="${4:-4}"
 
 echo "----------------------------------------"
 echo "Running unfolding on REAL DATA"
+echo "SCRIPT_DIR  : $SCRIPT_DIR"
+echo "BASE        : $BASE"
 echo "SIF         : $SIF"
 echo "Macro       : $MACRO"
 echo "Input data  : $INPUT"
@@ -53,9 +57,9 @@ echo "Output dir  : $OUT_DIR"
 echo "Iterations  : $NITER"
 echo "----------------------------------------"
 
-[[ -f "$SIF"      ]] || { echo "ERROR: SIF not found:      $SIF";      exit 1; }
-[[ -f "$MACRO"    ]] || { echo "ERROR: MACRO not found:    $MACRO";    exit 1; }
-[[ -f "$INPUT"    ]] || { echo "ERROR: Input not found:    $INPUT";    exit 1; }
+[[ -f "$SIF"       ]] || { echo "ERROR: SIF not found:       $SIF";       exit 1; }
+[[ -f "$MACRO"     ]] || { echo "ERROR: MACRO not found:     $MACRO";     exit 1; }
+[[ -f "$INPUT"     ]] || { echo "ERROR: Input not found:     $INPUT";     exit 1; }
 [[ -f "$RESP_FILE" ]] || { echo "ERROR: Resp. file not found: $RESP_FILE"; exit 1; }
 
 mkdir -p "$OUT_DIR"
@@ -64,15 +68,15 @@ mkdir -p "$OUT_DIR"
 # Run inside container
 ########################
 
-apptainer exec -e -B /gpfs/mnt/gpfs01 \
+# IMPORTANT: bind /gpfs01 so the container sees the same paths
+apptainer exec -e -B /gpfs01 \
   "$SIF" \
-  bash -lc "cd '$SCRIPT_DIR'; root -l -b <<EOF
-gSystem->Load(\"libRooUnfold\");
-.x ${MACRO}+(\"${INPUT}\",\"${RESP_FILE}\",\"${OUT_DIR}\",${NITER});
+  root -l -b <<EOF
+gSystem->Load("libRooUnfold");
+.x ${MACRO}+("${INPUT}","${RESP_FILE}","${OUT_DIR}",${NITER});
 .q
-EOF"
+EOF
 
 echo "----------------------------------------"
 echo "Done."
 echo "----------------------------------------"
-
