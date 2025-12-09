@@ -1,4 +1,4 @@
-# Analysis of inclusive jets in Au+Au collisions at $\sqrt{s_{#textrm{NN}}} = 200$ GeV
+# Analysis of inclusive jets in Au+Au collisions at $\sqrt{s_{\textrm{NN}}} = 200$ GeV
 
 ## Tree production
 `data/` folder contains the jet algorithm and tree production.
