@@ -7,6 +7,7 @@
 #include "TCollection.h"
 #include "TROOT.h"
 #include "TString.h"
+#include "TSystem.h"
 
 #include <iostream>
 #include <string>
@@ -48,6 +49,8 @@ static const double bin_truth_edges[nbins_truth+1] = {
 void make_efficiencies(const char *infile  = "embedding_merged.root",
                        const char *outfile = "efficiencies.root")
 {
+    TH1::SetDefaultSumw2(kTRUE);
+
     TFile *fin = TFile::Open(infile, "READ");
     if (!fin || fin->IsZombie()) {
         std::cerr << "Error: cannot open input file " << infile << std::endl;
@@ -63,6 +66,9 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
 
     std::cout << "Input : " << infile  << std::endl;
     std::cout << "Output: " << outfile << std::endl;
+
+    const char* qaDir = "QA_plots";
+    gSystem->mkdir(qaDir, kTRUE);
 
     // Loop over top-level keys (radii: R0.2, R0.3, R0.4, ...)
     TIter nextR(fin->GetListOfKeys());
@@ -226,12 +232,6 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_pur_eff[it] = (TH1D*)h_pur_num[it]->Clone("h_pur_eff");
                 h_pur_eff[it]->SetTitle("Purity vs p_{T}^{corr}");
 
-                h_match_mc_den[it]->Sumw2();
-                h_match_mc_num[it]->Sumw2();
-                h_trig_den[it]->Sumw2();
-                h_trig_num[it]->Sumw2();
-                h_pur_den[it]->Sumw2();
-                h_pur_num[it]->Sumw2();
             }
 
             // --- Loop over tree entries and fill histos ---
@@ -242,7 +242,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 double w = (double) xsecWeight * (double) centralityWeight;
 
                 // Reco quality cuts
-                bool haveReco = (reco_pt > -5.0);
+                bool haveReco = (reco_pt > -500.0);
                 bool passRecoCuts = false;
                 if (haveReco) {
                     passRecoCuts = (reco_area >= areaMin &&
@@ -257,7 +257,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
 
                     // ---------------- Matching efficiency (MC-based) ----------------
                     // Denominator: all MC jets with mc_pt_lead >= thr
-                    if (haveMC && mc_pt_lead >= thr) {
+                    if (haveMC) {
                         h_match_mc_den[it]->Fill(mc_pt, w);
 
                         // Numerator: MC jets that have a matched reco jet
@@ -352,7 +352,8 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_match_mc_eff_reb->GetXaxis()->SetTitle("p_{T}^{MC} [GeV]");
                 h_match_mc_eff_reb->GetYaxis()->SetTitle("Matching efficiency");
                 h_match_mc_eff_reb->Draw("E1");
-                cMatch->SaveAs(Form("QA_match_eff_%s.pdf", tagDirName.Data()));
+                h_match_mc_eff_reb->SetStats(0);
+                cMatch->SaveAs(Form("QA_plots/QA_match_eff_%s.pdf", tagDirName.Data()));
                 delete cMatch;
 
                 // --- Trigger efficiency in MEASURED binning ---
@@ -382,8 +383,10 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_trig_eff_reb->SetMarkerStyle(20);
                 h_trig_eff_reb->GetXaxis()->SetTitle("p_{T}^{reco,corr} [GeV]");
                 h_trig_eff_reb->GetYaxis()->SetTitle("Trigger efficiency");
+                h_trig_eff_reb->GetXaxis()->SetRangeUser(-20, 60);
                 h_trig_eff_reb->Draw("E1");
-                cTrig->SaveAs(Form("QA_trig_eff_%s.pdf", tagDirName.Data()));
+                h_trig_eff_reb->SetStats(0);
+                cTrig->SaveAs(Form("QA_plots/QA_trig_eff_%s.pdf", tagDirName.Data()));
                 delete cTrig;
 
                 // --- Purity in MEASURED binning ---
@@ -413,8 +416,10 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_pur_eff_reb->SetMarkerStyle(20);
                 h_pur_eff_reb->GetXaxis()->SetTitle("p_{T}^{reco,corr} [GeV]");
                 h_pur_eff_reb->GetYaxis()->SetTitle("Purity");
+                h_pur_eff_reb->GetXaxis()->SetRangeUser(-20, 60);
                 h_pur_eff_reb->Draw("E1");
-                cPur->SaveAs(Form("QA_purity_%s.pdf", tagDirName.Data()));
+                h_pur_eff_reb->SetStats(0);
+                cPur->SaveAs(Form("QA_plots/QA_purity_%s.pdf", tagDirName.Data()));
                 delete cPur;
             }
         } // end loop over centrality dirs

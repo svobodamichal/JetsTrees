@@ -21,8 +21,8 @@ public:
   bool trigger_match;
 
   MyJet()
-      : pt(-9), pt_corr(-9), eta(-9), phi(-9), area(-9), rho(-9), pt_lead(-9),
-        n_constituents(-9), neutral_fraction(-9), trigger_match(false) {}
+      : pt(-999), pt_corr(-999), eta(-999), phi(-999), area(-999), rho(-999), pt_lead(-999),
+        n_constituents(-999), neutral_fraction(-999), trigger_match(false) {}
 
   MyJet(float pt, float pt_corr, float eta, float phi, float area, float rho,
         float pt_lead, int n_constituents, float neutral_fraction,
@@ -54,10 +54,10 @@ MyJet(fastjet::PseudoJet jet, float rho)
 
   if (n_constituents == 0 || pt <= 0) {
     // mark as invalid jet
-    pt          = -9;
-    pt_corr     = -9;
-    pt_lead     = -9;
-    neutral_fraction = -9;
+    pt          = -999;
+    pt_corr     = -999;
+    pt_lead     = -999;
+    neutral_fraction = -999;
     trigger_match    = false;
     return;
   }

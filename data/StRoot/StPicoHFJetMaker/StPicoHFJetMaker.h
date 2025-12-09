@@ -128,7 +128,9 @@ private:
   float fCentralityWeight;
 
   int fRunNumber;
-  
+
+  Float_t fMcSumPt; 
+
   vector<float> fR;
   
   bool mIsEmbedding = true; // true for embedding, false for data

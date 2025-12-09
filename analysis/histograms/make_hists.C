@@ -22,6 +22,8 @@ const double CUT_NEUTRAL_FRACTION = 0.95;
 void make_hists(const char *infile  = "embedding_merged.root",
                 const char *outfile = "weighted_hists_matched.root")
 {
+    TH1::SetDefaultSumw2(kTRUE);
+
     TFile *fin = TFile::Open(infile, "READ");
     if (!fin || fin->IsZombie()) {
         std::cerr << "Error: cannot open input file " << infile << std::endl;

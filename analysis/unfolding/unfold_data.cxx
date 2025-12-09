@@ -75,6 +75,7 @@ void unfold_data(const char* dataFile,
 {
   gStyle->SetOptStat(0);
   EnsureDir(outDir);
+  TH1::SetDefaultSumw2(kTRUE);
 
   TFile* fData = TFile::Open(dataFile, "READ");
   if (!fData || fData->IsZombie()) {

@@ -72,6 +72,7 @@ void unfold_embedding(const char* inputFile,
 {
   gStyle->SetOptStat(0);
   EnsureDir(outDir);
+  TH1::SetDefaultSumw2(kTRUE);
 
   TFile* fin = TFile::Open(inputFile, "READ");
   if (!fin || fin->IsZombie()) {
