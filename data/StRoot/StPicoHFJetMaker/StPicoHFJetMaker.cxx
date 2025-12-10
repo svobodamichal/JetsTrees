@@ -15,6 +15,7 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
+#include <algorithm>
 
 #include "fastjet/ClusterSequenceArea.hh"
 #include "fastjet/JetDefinition.hh"
@@ -34,7 +35,6 @@ const char* kCentTag[4] = {
   "PERI_60_80"   // c3 = 3
 };
 
-const bool APPLY_HISTO_CUTS = false; // Set to true to apply cuts on jet area and neutral fraction when filling QA histograms 
 
 const double CUT_AREA_02 = 0.07; // R = 0.2
 const double CUT_AREA_03 = 0.20; // R = 0.3
@@ -46,17 +46,17 @@ vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
                                        const vector<MyJet> &RecoJets,
                                        const double &R);
 
-inline bool passHistoCuts(const MyJet &j, double R);
-
 ClassImp(StPicoHFJetMaker)
 
-    StPicoHFJetMaker::StPicoHFJetMaker(TString name, StPicoDstMaker *picoMaker,
-                                       TString outputBaseFileName)
-    : StPicoJetMaker(name, picoMaker, outputBaseFileName),
-      mRefmultCorrUtil(NULL) {
-
-  // constructor
+StPicoHFJetMaker::StPicoHFJetMaker(TString name, StPicoDstMaker *picoMaker,
+                                   TString outputBaseFileName)
+    : StPicoJetMaker(name, picoMaker, outputBaseFileName)
+{
+  mRefmultCorrUtil   = NULL;
+  mStoreOnlyTrigOrMc = false;
+  fMcSumPt           = 0.0f;
 }
+
 
 // _________________________________________________________
 StPicoHFJetMaker::~StPicoHFJetMaker() {
@@ -69,11 +69,6 @@ int StPicoHFJetMaker::InitJets() {
   assert(mADCtoEMaker);
   mTables = mADCtoEMaker->getBemcData()->getTables();
 
-  // -- INITIALIZE USER HISTOGRAMS ETC HERE -------------------
-  //    add them to the output list mOutList which is automatically written
-
-  // EXAMPLE //  mOutList->Add(new TH1F(...));
-  // EXAMPLE //  TH1F* hist = static_cast<TH1F*>(mOutList->Last());
   TH1::SetDefaultSumw2();
 
   mOutList->SetName("QA_histograms"); 
@@ -98,48 +93,6 @@ int StPicoHFJetMaker::InitJets() {
       TDirectory* cdir = rdir->mkdir(kCentTag[c3]);
       if (!cdir) cdir = (TDirectory*)rdir->Get(kCentTag[c3]);
       cdir->cd();
-      const int ci = c3; 
-
-      if (iR == 0 && c3 == 1) {
-        const size_t nR = fR.size();
-        fH2_den.assign(nR, std::vector<TH2D*>(4, nullptr));
-        fH2_num.assign(nR, std::vector<TH2D*>(4, nullptr));
-        fH1_reco.assign(nR, std::vector<TH1D*>(4, nullptr));
-        fH1_mc.assign(nR, std::vector<TH1D*>(4, nullptr));
-        fH2_reco_mc.assign(nR, std::vector<TH2D*>(4, nullptr));
-      }
-
-      
-      const int nb_pt   = 1000;  const double pt_min   = -40.0, pt_max   = 60.0;
-      const int nb_lead = 200;  const double lead_min = 0.0, lead_max = 30.0;
-
-    fH2_den[iR][ci] = new TH2D("den_ptcorr_vs_ptlead",
-      Form("Den: p_{T}^{corr} vs p_{T}^{lead} (R=%.1f, %s);p_{T}^{corr} [GeV];p_{T}^{lead} [GeV]",
-       fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max, nb_lead, lead_min, lead_max);
-    fH2_den[iR][ci]->SetDirectory(cdir);
-
-    fH2_num[iR][ci] = new TH2D("num_ptcorr_vs_ptlead",
-      Form("Num: (trg) p_{T}^{corr} vs p_{T}^{lead} (R=%.1f, %s);p_{T}^{corr} [GeV];p_{T}^{lead} [GeV]",
-       fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max, nb_lead, lead_min, lead_max);
-    fH2_num[iR][ci]->SetDirectory(cdir);
-
-    fH1_reco[iR][ci] = new TH1D("reco_ptcorr",
-      Form("Reco jet p_{T}^{corr} (R=%.1f, %s);p_{T}^{corr} [GeV];Jets",
-       fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max);
-    fH1_reco[iR][ci]->SetDirectory(cdir);
-
-
-    if (mIsEmbedding) {
-      fH1_mc[iR][ci] = new TH1D("mc_pt",
-        Form("MC jet p_{T} (R=%.1f, %s);p_{T}^{MC} [GeV];Jets",
-         fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max);
-      fH1_mc[iR][ci]->SetDirectory(cdir);
-
-      fH2_reco_mc[iR][ci] = new TH2D("recoptcorr_vs_mcpt",
-        Form("Reco p_{T}^{corr} vs MC p_{T} (R=%.1f, %s);p_{T}^{MC} [GeV];p_{T}^{corr} [GeV]",
-         fR[iR], kCentTag[c3]), nb_pt, pt_min, pt_max, nb_pt, pt_min, pt_max);
-      fH2_reco_mc[iR][ci]->SetDirectory(cdir);
-    }
       
       // ---- TTree per (R,class); NO centrality branch
       TTree* jetTree = new TTree("JetTree", "JetTree");
@@ -155,6 +108,8 @@ int StPicoHFJetMaker::InitJets() {
         jetTree->Branch("mc_pt_lead", &fMcJet.pt_lead, "mc_pt_lead/F");
         jetTree->Branch("mc_n_constituents", &fMcJet.n_constituents, "mc_n_constituents/I");
         jetTree->Branch("mc_neutral_fraction", &fMcJet.neutral_fraction, "mc_neutral_fraction/F");
+        jetTree->Branch("mc_sum_pt", &fMcSumPt, "mc_sum_pt/F");
+        
       }
       jetTree->Branch("reco_pt", &fRecoJet.pt, "reco_pt/F");
       jetTree->Branch("reco_pt_corr", &fRecoJet.pt_corr, "reco_pt_corr/F");
@@ -189,43 +144,39 @@ int StPicoHFJetMaker::FinishJets() {
 
   const size_t nR = fR.size();
 
-  for (size_t iR = 0; iR < nR; ++iR) {
-    TDirectory* rdir = dynamic_cast<TDirectory*>(fileDir->Get(Form("R%.1f", fR[iR])));
-    if (!rdir) continue;
+for (size_t iR = 0; iR < nR; ++iR) {
+  TDirectory* rdir = dynamic_cast<TDirectory*>(fileDir->Get(Form("R%.1f", fR[iR])));
+  if (!rdir) continue;
 
-    for (int c3 = 1; c3 <= 3; ++c3) {
-      const int ciTree = c3 - 1;  // 0..2
+  for (int c3 = 1; c3 <= 3; ++c3) {
+    const int ciTree = c3 - 1;  // 0..2
 
-      TDirectory* cdir = dynamic_cast<TDirectory*>(rdir->Get(kCentTag[c3]));
-      if (!cdir) continue;
-      cdir->cd();
+    TDirectory* cdir = dynamic_cast<TDirectory*>(rdir->Get(kCentTag[c3]));
+    if (!cdir) continue;
+    cdir->cd();
 
-      // --- write the tree
-       if (iR < fTreeRC.size() && ciTree >= 0 && ciTree < (int)fTreeRC[iR].size() && fTreeRC[iR][ciTree]) {
-        fTreeRC[iR][ciTree]->Write();
-      }
-
-      // --- write the histograms (if they exist)
-      const size_t ci = size_t(c3);
-      if (iR < fH2_den.size()) {
-        if (ci < fH2_den[iR].size()     && fH2_den[iR][ci])     fH2_den[iR][ci]->Write();
-        if (ci < fH2_num[iR].size()     && fH2_num[iR][ci])     fH2_num[iR][ci]->Write();
-        if (ci < fH1_reco[iR].size()    && fH1_reco[iR][ci])    fH1_reco[iR][ci]->Write();
-        if (mIsEmbedding) {
-          if (ci < fH1_mc[iR].size()      && fH1_mc[iR][ci])      fH1_mc[iR][ci]->Write();
-          if (ci < fH2_reco_mc[iR].size() && fH2_reco_mc[iR][ci]) fH2_reco_mc[iR][ci]->Write();
-        }
-      }
-    } // c3
-  }   // iR
+    // --- write the tree
+    if (iR < fTreeRC.size() && ciTree >= 0 &&
+        ciTree < (int)fTreeRC[iR].size() &&
+        fTreeRC[iR][ciTree]) {
+      fTreeRC[iR][ciTree]->Write();
+    }
+  } // c3
+}   // iR
 
   fileDir->cd();
   return kStOK;
 }
 
-
 // _________________________________________________________
 int StPicoHFJetMaker::MakeJets() {
+
+    for (int i = 0; i < 4800; ++i) {
+      Sump[i] = 0.0;
+    }
+
+  fMcSumPt = 0.0f; 
+  Bool_t vetoReco = kFALSE; 
   
   TH1D *hcent9 = static_cast<TH1D *>(mOutList->FindObject("hcent9"));
   TAxis* ax = hcent9->GetXaxis();
@@ -249,8 +200,6 @@ int StPicoHFJetMaker::MakeJets() {
   vector<fastjet::PseudoJet> fullTracks;
   vector<fastjet::PseudoJet> MCjetTracks;
 
-
-
   fRunNumber = mPicoDst->event()->runId();
   int eventId = mPicoDst->event()->eventId(); // eventID
   (void)eventId;
@@ -273,13 +222,8 @@ int StPicoHFJetMaker::MakeJets() {
   else if (fCentrality == 3 || fCentrality == 4)  c3 = 2; // 20-40%
   else if (fCentrality == 7 || fCentrality == 8)  c3 = 3; // 60-80%
   if (c3 == 0) {
-  // Reset Sump[] before returning
-  for (int i = 0; i < 4800; i++) Sump[i] = 0.0;
   return kStOK;
   }
-
-  const double w_event = fCentralityWeight * (mIsEmbedding ? fXsecWeight : 1.0);
-  const int ci = c3;
 
   // MC tracks
   int noMCtracks = mPicoDst->numberOfMcTracks();
@@ -292,6 +236,7 @@ int StPicoHFJetMaker::MakeJets() {
     double mceta = mctrk->eta();
     if ((geantId > 3 && geantId < 7) || fabs(mceta) > 1.0 || mcpt < 0.2)
       continue;
+    fMcSumPt += (Float_t)mcpt;
     TVector3 mcmom = mctrk->p();
     double mcphi = mcmom.Phi();
     if (mcphi < 0.0)
@@ -314,6 +259,22 @@ int StPicoHFJetMaker::MakeJets() {
     MCjetTracks.push_back(inputMcParticle);
   }
 
+if (mIsEmbedding && fpThatmax > 0.0 && !MCjetTracks.empty()) {
+  float Rcheck = fR.empty() ? 0.4f : *std::max_element(fR.begin(), fR.end());
+  fastjet::JetDefinition mc_jet_def_veto(fastjet::antikt_algorithm, Rcheck);
+  fastjet::ClusterSequence mc_cs_veto(MCjetTracks, mc_jet_def_veto);
+  std::vector<fastjet::PseudoJet> mcjets_veto =
+      sorted_by_pt(mc_cs_veto.inclusive_jets(1.0)); // pT > 1 GeV
+
+  const double ptMaxVeto = 1.0 * fpThatmax; // changed from 1.5 to 1.0
+
+  for (size_t i = 0; i < mcjets_veto.size(); ++i) {
+    if (mcjets_veto[i].perp() > ptMaxVeto) {
+      return kStOK;
+    }
+  }
+
+}
   // RC part
   GetCaloTrackMomentum(mPicoDst, mPrimVtx); // fill array Sump with momenta of
                                             // tracks which are matched to BEMC
@@ -321,103 +282,105 @@ int StPicoHFJetMaker::MakeJets() {
   StEmcPosition *mEmcPosition = new StEmcPosition();
 
 //  double TOWE = 0;
-  for (int iTow = 0; iTow < 4800; iTow++) { // get btow info
-    StPicoBTowHit *towHit = mPicoDst->btowHit(iTow);
-    if (!towHit || towHit->isBad())
-      continue; // if the tower is marked as bad or missing info
-    int realtowID = towHit->numericIndex2SoftId(iTow);
-    if (BadTowerMap[realtowID])
-      continue; // exclude bad towers (map in JetInfo.h)
+for (int iTow = 0; iTow < 4800; iTow++) { // get btow info
+  StPicoBTowHit *towHit = mPicoDst->btowHit(iTow);
+  if (!towHit || towHit->isBad())
+    continue;
+  int realtowID = towHit->numericIndex2SoftId(iTow);
+  if (BadTowerMap[realtowID])
+    continue;
 
+  double towE = GetTowerCalibEnergy(iTow + 1);
 
-    double towE = GetTowerCalibEnergy(iTow + 1); // get tower energy
-//    TOWE = towE; // just keep track of the original energy for trigger approximation
+  if (doTowErrPlus == true)  towE = towE + 0.038 * towE;
+  if (doTowErrMinus == true) towE = towE - 0.038 * towE;
 
-    if (doTowErrPlus == true) {towE = towE + 0.038 * towE;}
-    if (doTowErrMinus == true) {towE = towE - 0.038 * towE;}
+  towE -= fHadronCorr * Sump[iTow];
+  if (towE < 0) towE = 0;
 
-    towE -= fHadronCorr * Sump[iTow]; // subtract hadronic energy deposition
-    if (towE < 0)
-      towE = 0;
+  StEmcGeom *mEmcGeom = StEmcGeom::getEmcGeom("bemc");
+  float Toweta_tmp = 0, Towphi = 0;
+  mEmcGeom->getEtaPhi(realtowID, Toweta_tmp, Towphi);
 
-    StEmcGeom *mEmcGeom;
-    mEmcGeom = StEmcGeom::getEmcGeom("bemc");
-    float Toweta_tmp = 0, Towphi = 0;
-    mEmcGeom->getEtaPhi(realtowID, Toweta_tmp, Towphi);
-    StThreeVectorF towerPosition = mEmcPosition->getPosFromVertex(
-        StThreeVectorF(mPrimVtx.x(), mPrimVtx.y(), mPrimVtx.z()), realtowID);
-    //    float Toweta2 = vertexCorrectedEta(Toweta_tmp, vz); //max eta 1.05258
-    //    max difference: ET = 0.124452 for E = 0.2, if we cut on |Vz| < 30 cm
-    if (Towphi < 0) Towphi += 2.0*TMath::Pi();
-    if (Towphi >= 2.0*TMath::Pi()) Towphi -= 2.0*TMath::Pi();
+  StThreeVectorF towerPosition = mEmcPosition->getPosFromVertex(
+      StThreeVectorF(mPrimVtx.x(), mPrimVtx.y(), mPrimVtx.z()), realtowID);
 
-    float Toweta = towerPosition.pseudoRapidity();
-    double ET = towE / cosh(Toweta);
-    if (ET > 30) {
-      continue;
-    } // ignore E > 30 GeV towers
-    // no clustering
-    double px, py, pz;
+  if (Towphi < 0)              Towphi += 2.0 * TMath::Pi();
+  if (Towphi >= 2.0*TMath::Pi()) Towphi -= 2.0 * TMath::Pi();
 
-    px = ET * cos(Towphi);
-    py = ET * sin(Towphi);
-    pz = towE * tanh(Toweta);
+  float Toweta = towerPosition.pseudoRapidity();
+  double ET = towE / cosh(Toweta);
 
+  if (ET > 30.0) {
+    vetoReco = kTRUE;
+    break;   // no need to check further towers
+  }
 
-    fastjet::PseudoJet inputTower(px, py, pz, towE);
-    if (inputTower.perp() > fETmincut) {
-      inputTower.set_user_index(
-          0); // default index is -1, 0 means neutral particle
+  // no clustering if vetoReco; we will check this later
+  double px = ET * cos(Towphi);
+  double py = ET * sin(Towphi);
+  double pz = towE * tanh(Toweta);
 
-      int ADC = towHit->adc() >> 4;
-      if (ADC > fTrgthresh){
-     // triggerTowersEtaPhi.emplace_back(Toweta, Towphi);
-      inputTower.set_user_index(9999); // mark trigger towers with user_index 9999
-      }
-      neutraljetTracks.push_back(inputTower);
+  fastjet::PseudoJet inputTower(px, py, pz, towE);
+  if (inputTower.perp() > fETmincut) {
+    inputTower.set_user_index(0); // neutral
+    int ADC = towHit->adc() >> 4;
+    if (ADC > fTrgthresh) {
+      inputTower.set_user_index(9999); // trigger towers
     }
-  } // end get btow info
+    neutraljetTracks.push_back(inputTower);
+  }
+} // end tower loop
 
-  delete mEmcPosition;
+delete mEmcPosition;
 
-  // loop over primary tracks
-  for (unsigned int i = 0; i < mIdxPicoParticles.size(); i++) {
-    StPicoTrack *trk = mPicoDst->track(mIdxPicoParticles[i]);
-   if (doTrackErr) {
+
+// loop over primary tracks
+for (unsigned int i = 0; i < mIdxPicoParticles.size(); i++) {
+  StPicoTrack *trk = mPicoDst->track(mIdxPicoParticles[i]);
+
+  if (doTrackErr) {
     static TRandom3 randGen;
     if (randGen.Rndm() > 0.96) continue;
   }
 
-    const TVector3 p = trk->pMom();
-    const double pT  = p.Perp();
-    if (!(pT > 0)) continue;                // NaN/zero guard
-    const float eta = p.PseudoRapidity();
-    if (fabs(eta) > 1.0) continue;          // your fiducial cut
-    float phi = trk->pMom().Phi();
-    float dca = (mPrimVtx - trk->origin()).Mag();
-    float charged = trk->charge();
+  const TVector3 p = trk->pMom();
+  const double pT  = p.Perp();
+  if (!(pT > 0)) continue;
 
+  if (pT > 30.0) {
+    vetoReco = kTRUE;
+    break;   // no need to look at other tracks
+  }
+
+  const float eta = p.PseudoRapidity();
+  if (fabs(eta) > 1.0) continue;
+  float phi = trk->pMom().Phi();
+  float dca = (mPrimVtx - trk->origin()).Mag();
+  float charged = trk->charge();
 
   (void)phi; (void)dca; (void)charged;
-  
+
   fastjet::PseudoJet pj(p.x(), p.y(), p.z(), p.Mag());
 
-      if (mIsEmbedding) {
-       if (trk->qaTruth() > 95) pj.set_user_index(trk->idTruth() - 1);
-       else                     pj.set_user_index(trk->charge() ? 1 : 0);
-      } else {
-      pj.set_user_index(trk->charge() ? 1 : 0);
-      }
+  if (mIsEmbedding) {
+    if (trk->qaTruth() > 95) pj.set_user_index(trk->idTruth() - 1);
+    else                     pj.set_user_index(trk->charge() ? 1 : 0);
+  } else {
+    pj.set_user_index(trk->charge() ? 1 : 0);
+  }
 
-      jetTracks.push_back(pj);  // <-- add this line
+  jetTracks.push_back(pj);
 
-  } // end loop over primary tracks
+} // end loop over primary tracks
 
+fullTracks.clear();
+
+if (!vetoReco) {
+  // build fullTracks from towers + tracks
   fullTracks = neutraljetTracks;
-  fullTracks.insert(
-      fullTracks.end(), jetTracks.begin(),
-      jetTracks.end()); // commenting this line will cause only neutral jets,
-  // MAX NEUTRAL FRACTION HAS TO BE TURNED OFF
+  fullTracks.insert(fullTracks.end(), jetTracks.begin(), jetTracks.end());
+}
 
 //==================================================================================//
 // Jet part
@@ -427,17 +390,20 @@ fastjet::AreaDefinition area_def(
     fastjet::GhostedAreaSpec(fGhostMaxrap, 1, 0.01));
 
 //====================background estimate=======================//
+float rho = 0.0;
 fastjet::JetDefinition jet_def_for_rho(fastjet::kt_algorithm, fRBg);
-nJetsRemove = (c3 == 1 ? 2 : 1); // remove 2 hardest jets in central, 1 otherwise
+nJetsRemove = (c3 == 1 ? 2 : 1);
 
 fastjet::Selector selector = (!fastjet::SelectorNHardest(nJetsRemove)) *
                              fastjet::SelectorAbsEtaMax(1.0) *
                              fastjet::SelectorPtMin(0.01);
 
-fastjet::JetMedianBackgroundEstimator bkgd_estimator(
-    selector, jet_def_for_rho, area_def);
-bkgd_estimator.set_particles(fullTracks);
-float rho = bkgd_estimator.rho();
+if (!vetoReco && !fullTracks.empty()) {
+  fastjet::JetMedianBackgroundEstimator bkgd_estimator(
+      selector, jet_def_for_rho, area_def);
+  bkgd_estimator.set_particles(fullTracks);
+  rho = bkgd_estimator.rho();
+}
 //======================================================================//
 
 for (unsigned int i = 0; i < fR.size(); i++) {
@@ -445,117 +411,94 @@ for (unsigned int i = 0; i < fR.size(); i++) {
   float maxRapJet = 1 - fR[i];
 
   //==============================Reco jets===============================//
-  fastjet::ClusterSequenceArea reco_cluster_seq(fullTracks, jet_def, area_def);
-  vector<fastjet::PseudoJet> fjets_all =
-      sorted_by_pt(reco_cluster_seq.inclusive_jets(fJetPtMin));
+  std::vector<MyJet> myRecoJets;
 
-  fastjet::Selector fiducial_cut_selector = fastjet::SelectorAbsEtaMax(maxRapJet);
-  vector<fastjet::PseudoJet> RecoJets = fiducial_cut_selector(fjets_all);
-  vector<MyJet> myRecoJets;
-  for (auto &rcJet : RecoJets)
-    myRecoJets.push_back(MyJet(rcJet, rho));
+  if (!vetoReco && !fullTracks.empty()) {
+    fastjet::ClusterSequenceArea reco_cluster_seq(fullTracks, jet_def, area_def);
+    std::vector<fastjet::PseudoJet> fjets_all =
+        sorted_by_pt(reco_cluster_seq.inclusive_jets(fJetPtMin));
+
+    fastjet::Selector fiducial_cut_selector = fastjet::SelectorAbsEtaMax(maxRapJet);
+    std::vector<fastjet::PseudoJet> RecoJets = fiducial_cut_selector(fjets_all);
+
+    myRecoJets.reserve(RecoJets.size());
+    for (size_t j = 0; j < RecoJets.size(); ++j) {
+      myRecoJets.push_back(MyJet(RecoJets[j], rho));
+    }
+  }
   //======================================================================//
 
   // pick tree for this (R, class)
-  TTree* jetTree = nullptr;
-  const int ciTree = c3 - 1;  // 0..2
+  TTree* jetTree = 0;
+  const int ciTree = c3 - 1;
   if (i < fTreeRC.size() && ciTree >= 0 && ciTree < (int)fTreeRC[i].size())
     jetTree = fTreeRC[i][ciTree];
 
-  // histogram pointers for this (R, class)
-  TH2D* hDen    = (i < fH2_den.size()     && ci >= 0 && fH2_den[i][ci])     ? fH2_den[i][ci]     : nullptr;
-  TH2D* hNum    = (i < fH2_num.size()     && ci >= 0 && fH2_num[i][ci])     ? fH2_num[i][ci]     : nullptr;
-  TH1D* hReco   = (i < fH1_reco.size()    && ci >= 0 && fH1_reco[i][ci])    ? fH1_reco[i][ci]    : nullptr;
-  TH1D* hMc     = (mIsEmbedding && i < fH1_mc.size() && ci >= 0 && fH1_mc[i][ci]) ? fH1_mc[i][ci] : nullptr;
-  TH2D* hRecoMc = (mIsEmbedding && i < fH2_reco_mc.size() && ci >= 0 && fH2_reco_mc[i][ci]) ? fH2_reco_mc[i][ci] : nullptr;
+  //==================== Embedding mode ==================//
+  if (mIsEmbedding) {
+    //============================== MC jets ===============================//
+    fastjet::ClusterSequenceArea mc_cluster_seq(MCjetTracks, jet_def, area_def);
+    vector<fastjet::PseudoJet> Mcjets_all =
+        sorted_by_pt(mc_cluster_seq.inclusive_jets(1.0));
 
+    fastjet::Selector McFiducial_cut_selector =
+        fastjet::SelectorAbsEtaMax(maxRapJet) *
+        fastjet::SelectorPtMin(0.01);
 
-    //==================== Embedding mode ==================//
-if (mIsEmbedding) {
-  //============================== MC jets ===============================//
-  fastjet::ClusterSequenceArea mc_cluster_seq(MCjetTracks, jet_def, area_def);
-  vector<fastjet::PseudoJet> Mcjets_all =
-      sorted_by_pt(mc_cluster_seq.inclusive_jets(1.0));
+    vector<fastjet::PseudoJet> McJets = McFiducial_cut_selector(Mcjets_all);
+    vector<MyJet> myMcJets;
+    myMcJets.reserve(McJets.size());
+    for (size_t j = 0; j < McJets.size(); ++j) {
+      myMcJets.push_back(MyJet(McJets[j], 0.0f)); // rho = 0 for truth
+    }
 
-  fastjet::Selector McFiducial_cut_selector =
-      fastjet::SelectorAbsEtaMax(maxRapJet) *
-      fastjet::SelectorPtMin(0.01) *
-      fastjet::SelectorPtMax(1.5 * fpThatmax); // reject high-weight jets
+    //========================= MC–Reco matching ===========================//
+    vector<MatchedJetPair> MatchedJets =
+        MatchJetsEtaPhi(myMcJets, myRecoJets, fR[i]);
 
-  vector<fastjet::PseudoJet> McJets = McFiducial_cut_selector(Mcjets_all);
-  vector<MyJet> myMcJets;
-  for (auto &mcJet : McJets) {
-    myMcJets.push_back(MyJet(mcJet, rho));
-  }
+    for (size_t im = 0; im < MatchedJets.size(); ++im) {
+      const MatchedJetPair& mp = MatchedJets[im];
 
-  //========================= MC–Reco matching ===========================//
-  vector<MatchedJetPair> MatchedJets = MatchJetsEtaPhi(myMcJets, myRecoJets, fR[i]);
+      fMcJet   = mp.first;
+      fRecoJet = mp.second;
+      fDeltaR  = fMcJet.deltaR(fRecoJet);
 
-  for (const auto& mp : MatchedJets) {
-    fMcJet   = mp.first;
-    fRecoJet = mp.second;
-    fDeltaR  = fMcJet.deltaR(fRecoJet);
+      const bool haveReco = (fRecoJet.pt >= 0.0);   // with default -999 this is false if no reco
+      const bool haveMC   = (fMcJet.pt   >= 0.0);
 
-    const bool haveReco = (fRecoJet.pt >= 0);
-    const bool haveMC   = (fMcJet.pt   >= 0);
-
-    // --- MC-only histograms ---
-    if (haveMC && hMc) hMc->Fill(fMcJet.pt, w_event);
-
-    if (!haveReco)
-      continue;
-
-      if (APPLY_HISTO_CUTS) {
-       if (!passHistoCuts(fRecoJet, fR[i]))
-        continue;
+      if (jetTree && (haveMC || haveReco)) {
+        if (mStoreOnlyTrigOrMc) {
+          if (haveMC || (haveReco && fRecoJet.trigger_match)) {
+            jetTree->Fill();
+          }
+        } else {
+          jetTree->Fill();
+        }
       }
-
-    if (hDen) hDen->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
-
-    // If not triggered, we stop here (no Num/reco/response/tree)
-    if (!fRecoJet.trigger_match)
-      continue;
-
-      if (APPLY_HISTO_CUTS) {
-       if (!passHistoCuts(fRecoJet, fR[i]))
-        continue;
-      }
-
-    // Num: triggered jets only
-    if (hNum) hNum->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
-
-    if (hReco) hReco->Fill(fRecoJet.pt_corr, w_event);
-
-    if (haveMC && hRecoMc) hRecoMc->Fill(fMcJet.pt, fRecoJet.pt_corr, w_event);
-    
-    if(!(fRecoJet.pt_corr < fpThatmax*1.5)) continue; // reject high-weight jets
-    if (jetTree)
-      jetTree->Fill();
-  }
+    } // end loop over MatchedJets
 
   } else {
     //==================== Data mode ===========================//
-   for (const auto& rj : myRecoJets) {
-    fRecoJet = rj;            // contains trigger_match already
-    fMcJet   = MyJet();       // dummy
-    fDeltaR  = -1.0;
+    if (!vetoReco) {
+      for (size_t jr = 0; jr < myRecoJets.size(); ++jr) {
+        fRecoJet = myRecoJets[jr];
+        fMcJet   = MyJet();   // dummy
+        fDeltaR  = -1.0;
 
-    // Den: all jets that pass selection
-    if (hDen) hDen->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
+        if (!jetTree) continue;
 
-    // Num: only jets that *contain* the trigger tower
-    if (fRecoJet.trigger_match && hNum) hNum->Fill(fRecoJet.pt_corr, fRecoJet.pt_lead, w_event);
+        if (mStoreOnlyTrigOrMc) {
+          if (fRecoJet.trigger_match) {
+            jetTree->Fill();
+          }
+        } else {
+          jetTree->Fill();
+        }
+      }
+    } // if (!vetoReco)
+  } // end embedding/data
 
-    if (fRecoJet.trigger_match && hReco) hReco->Fill(fRecoJet.pt_corr, w_event);
-    if (!fRecoJet.trigger_match) continue;
-    if (jetTree) jetTree->Fill();
-    } // end loop over reco jets
-  } // end embedding/data condition
 } // end loop over R
-
-  for (int i = 0; i < 4800; i++) {
-    Sump[i] = 0.0; // reset Sump array
-  }
   return kStOK;
 }
 
@@ -674,19 +617,4 @@ vector<MatchedJetPair> MatchJetsEtaPhi(const vector<MyJet> &McJets,
   }
 
   return matchedJets;
-}
-
-//-----------------------------------------------------------------------------
-// Apply histogram cuts
-//-----------------------------------------------------------------------------
-inline bool passHistoCuts(const MyJet &j, double R) {
-    // area cut per radius
-    double acut = (R < 0.25 ? CUT_AREA_02 :
-                  (R < 0.35 ? CUT_AREA_03 :
-                              CUT_AREA_04));
-
-    if (j.area < acut) return false;
-    if (j.neutral_fraction > CUT_NEUTRAL_FRACTION) return false;
-
-    return true;
 }

@@ -5,39 +5,50 @@ set -euo pipefail
 # Configuration
 ########################
 
-# Base path as seen *inside* the container
-BASE="/gpfs/mnt/gpfs01/star/pwg/svomich/JetsTrees"
-
-SIF="${BASE}/analysis/unfolding/roounfold.sif"
-
-# Directory where this script lives (macro is assumed to be here as well)
+# Directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MACRO="${BASE}/analysis/unfolding/unfold_data.cxx"
+
+# Base dir = two levels up from unfolding/
+# (i.e. .../JetsTrees, assuming the same structure)
+BASE="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Singularity image and macro, both in the same dir as this script
+SIF="${SCRIPT_DIR}/roounfold.sif"
+#MACRO="${SCRIPT_DIR}/unfold_data_test.cxx"
+MACRO="$(realpath ${SCRIPT_DIR}/unfold_data_test.cxx)"
 
 ########################
 # Arguments
 ########################
 
-# 1st arg: data input (either absolute path or basename under ${BASE}/trees)
-if [[ $# -ge 1 ]]; then
-  if [[ "$1" = /* ]]; then
-    INPUT="$1"
-  else
-    INPUT="${BASE}/trees/$1"
-  fi
-else
-  INPUT="${BASE}/trees/data_merged.root"
-fi
 
-# 2nd arg: RESPONSE ROOT FILE (single file with all tag directories)
+#1st arg: method of unfolding (Bayes or SVD) - default: Bayes
+
+METHOD="${1:-Bayes}"
+
+# 2nd arg: data input (either absolute path or basename under ${BASE}/trees)
+
+#if [[ $# -ge 2 ]]; then
+#  if [[ "$2" = /* ]]; then
+#    INPUT="$2"
+#  else
+#    INPUT="${BASE}/trees/$2"
+#  fi
+#else
+#  INPUT="${BASE}/trees/data_merged.root"
+#fi
+
+INPUT="${2:-/gpfs/mnt/gpfs01/star/pwg/svomich/JetsTrees/trees/data_merged.root}"
+
+# 3rd arg: RESPONSE ROOT FILE (single file with all tag directories)
 # adjust the default name to whatever you actually wrote in the embedding macro
-RESP_FILE="${2:-${BASE}/analysis/unfolding/out_embedding/responses_embedding.root}"
+RESP_FILE="${3:-${SCRIPT_DIR}/out_SVD_Michalova_data/responses_embedding.root}"
 
-# 3rd arg: output directory for unfolded data spectra
-OUT_DIR="${3:-${BASE}/analysis/unfolding/out_data}"
+# 4th arg: output directory for unfolded data spectra
+OUT_DIR="${4:-${SCRIPT_DIR}/out_data_Bayes}"
 
-# 4th arg: number of Bayes iterations
-NITER="${4:-4}"
+# 5th arg: number of Bayes iterations
+NITER="${5:-4}"
 
 ########################
 # Checks
@@ -45,12 +56,14 @@ NITER="${4:-4}"
 
 echo "----------------------------------------"
 echo "Running unfolding on REAL DATA"
+echo Script dir : $SCRIPT_DIR
+echo "Method      : $METHOD"
 echo "SIF         : $SIF"
 echo "Macro       : $MACRO"
 echo "Input data  : $INPUT"
 echo "Resp. file  : $RESP_FILE"
 echo "Output dir  : $OUT_DIR"
-echo "Iterations  : $NITER"
+echo "Iterations for Bayes : $NITER"
 echo "----------------------------------------"
 
 [[ -f "$SIF"      ]] || { echo "ERROR: SIF not found:      $SIF";      exit 1; }
@@ -64,11 +77,11 @@ mkdir -p "$OUT_DIR"
 # Run inside container
 ########################
 
-apptainer exec -e -B /gpfs/mnt/gpfs01 \
+apptainer exec -e -B /gpfs/mnt/gpfs01,/gpfs01 \
   "$SIF" \
-  bash -lc "cd '$SCRIPT_DIR'; root -l -b <<EOF
+  bash -lc "root -l -b <<EOF
 gSystem->Load(\"libRooUnfold\");
-.x ${MACRO}+(\"${INPUT}\",\"${RESP_FILE}\",\"${OUT_DIR}\",${NITER});
+.x ${MACRO}+(\"${INPUT}\",\"${RESP_FILE}\",\"${OUT_DIR}\",${NITER},\"$METHOD\");
 .q
 EOF"
 

@@ -9,8 +9,11 @@ MACRO="/gpfs/mnt/gpfs01/star/pwg/walz/Analysis_trees/analysis/unfolding/unfold_e
 # ----------------------------------------------
 
 METHOD="${1:-Bayes}"
-IN="${2:-$BASE/trees/merged_all/embedding_merged.root}"
-OUT="${3:-$BASE/analysis/unfolding/out_test_Bayes_new}"
+#IN="${2:-$BASE/trees/embedding_merged.root}"
+#OUT="${3:-$BASE/analysis/unfolding/out_embedding_${METHOD}}"
+
+IN="${2:-/gpfs/mnt/gpfs01/star/pwg/svomich/JetsTrees/trees/embedding_merged.root}"
+OUT="${3:-$BASE/analysis/unfolding/out_SVD_Michalova_data}"
 
 if [[ ! -f "$IN" ]]; then
   echo "Input not found: $IN"

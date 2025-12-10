@@ -33,7 +33,8 @@ class StChain;
 void runPicoHFJetMaker(TString inputFile, TString outputFile = "output",
                        const unsigned int makerMode = 0,
                        TString treeName = "picoDst",
-                       bool isEmbedding = true){
+                       bool isEmbedding = true,
+                       bool storeOnlyTrigOrMc = false){
 
 #ifdef __CINT__
   gROOT->LoadMacro("loadSharedHFLibraries.C");
@@ -97,6 +98,10 @@ void runPicoHFJetMaker(TString inputFile, TString outputFile = "output",
   stPicoHFJetMaker->setMcMode(false);
   stPicoHFJetMaker->setIsEmbedding(isEmbedding);
 
+  // true  = compact analysis: only MC + triggered reco jets in tree
+  // false = full QA: *all* reco jets in tree
+  //bool storeOnlyTrigOrMc = false;
+  //stPicoHFJetMaker->setStoreOnlyTrigOrMc(storeOnlyTrigOrMc);
 
   StPicoCuts *picoCuts = new StPicoCuts("PicoCuts");
   stPicoHFJetMaker->setPicoCuts(picoCuts);

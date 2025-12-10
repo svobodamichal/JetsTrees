@@ -52,7 +52,7 @@ void plot_histograms() {
             continue;
         }
         
-        TDirectory* dir = (TDirectory*)f->Get("R0.3");
+        TDirectory* dir = (TDirectory*)f->Get("R0.4");
         if (!dir) {
             printf("Directory R0.3 not found in %s\n", files[iFile]);
             f->Close();
@@ -60,7 +60,7 @@ void plot_histograms() {
             continue;
         }
         
-        TDirectory* subdir = (TDirectory*)dir->Get("PERI_60_80");
+        TDirectory* subdir = (TDirectory*)dir->Get("CENT_0_10");
         if (!subdir) {
             printf("Directory MID_40_60 not found in %s\n", files[iFile]);
             f->Close();
@@ -79,8 +79,8 @@ void plot_histograms() {
         // Create histogram for this file
         TH1D* h = new TH1D(Form("h_%d", iFile), ";reco_pt;Counts", 200, -20, 120);
         h->SetLineColor(colors[iFile % 11]);
-        h->SetLineWidth(2);
-        h->SetTitle("R0.3, PERI 60-80");
+        h->SetLineWidth(1);
+        h->SetTitle("R0.4, CENT 0-10");
         h->SetDirectory(0); // Detach from file
         
         float value = 0;

@@ -111,6 +111,8 @@ public:
   void setDoTowErrMinus(bool val);
   void setDoTrackErr(bool val);
 
+  void setStoreOnlyTrigOrMc(bool val);
+
 
 protected:
   TString mInputFileName; //! *.list - MuDst or picoDst
@@ -126,7 +128,9 @@ private:
   float fCentralityWeight;
 
   int fRunNumber;
-  
+
+  Float_t fMcSumPt; 
+
   vector<float> fR;
   
   bool mIsEmbedding = true; // true for embedding, false for data
@@ -176,13 +180,15 @@ private:
   bool doTowErrMinus = false;
   bool doTrackErr = false;
 
+  bool mStoreOnlyTrigOrMc = false;
+
     // fTreeRC[iR][iC] with iC = 0 (central), 1 (midcentral), 2 (peripheral)
   std::vector<std::vector<TTree*>> fTreeRC;
 
   // store 3-class mapping per event (0=undef, 1=central, 2=midcentral, 3=peripheral)
   int fCentrality3;
 
-  std::vector<std::vector<TH2D*>> fH2_den, fH2_num, fH2_reco_mc;
+  std::vector<std::vector<TH2D*>> fH2_den, fH2_num, fH2_reco_mc, fH2_reco_matched;
   std::vector<std::vector<TH1D*>> fH1_reco, fH1_mc;
 
   // -- ADD USER MEMBERS HERE -------------------
@@ -263,5 +269,8 @@ inline void StPicoHFJetMaker::setDoTrackErr(bool val) {
   doTrackErr = val;
 }
 
+inline void StPicoHFJetMaker::setStoreOnlyTrigOrMc(bool val) {
+  mStoreOnlyTrigOrMc = val;
+}
 
 #endif
