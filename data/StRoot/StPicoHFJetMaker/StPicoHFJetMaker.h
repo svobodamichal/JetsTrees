@@ -111,9 +111,6 @@ public:
   void setDoTowErrMinus(bool val);
   void setDoTrackErr(bool val);
 
-  void setStoreOnlyTrigOrMc(bool val);
-
-
 protected:
   TString mInputFileName; //! *.list - MuDst or picoDst
 
@@ -128,8 +125,11 @@ private:
   float fCentralityWeight;
 
   int fRunNumber;
+  int fEventId;
 
   Float_t fMcSumPt; 
+
+  Int_t fRefMult;
 
   vector<float> fR;
   
@@ -179,8 +179,6 @@ private:
   bool doTowErrPlus = false;
   bool doTowErrMinus = false;
   bool doTrackErr = false;
-
-  bool mStoreOnlyTrigOrMc = false;
 
     // fTreeRC[iR][iC] with iC = 0 (central), 1 (midcentral), 2 (peripheral)
   std::vector<std::vector<TTree*>> fTreeRC;
@@ -269,8 +267,5 @@ inline void StPicoHFJetMaker::setDoTrackErr(bool val) {
   doTrackErr = val;
 }
 
-inline void StPicoHFJetMaker::setStoreOnlyTrigOrMc(bool val) {
-  mStoreOnlyTrigOrMc = val;
-}
 
 #endif

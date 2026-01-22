@@ -98,11 +98,6 @@ void runPicoHFJetMaker(TString inputFile, TString outputFile = "output",
   stPicoHFJetMaker->setMcMode(false);
   stPicoHFJetMaker->setIsEmbedding(isEmbedding);
 
-  // true  = compact analysis: only MC + triggered reco jets in tree
-  // false = full QA: *all* reco jets in tree
-  bool storeOnlyTrigOrMc = false;
-  stPicoHFJetMaker->setStoreOnlyTrigOrMc(storeOnlyTrigOrMc);
-
   StPicoCuts *picoCuts = new StPicoCuts("PicoCuts");
   stPicoHFJetMaker->setPicoCuts(picoCuts);
 
@@ -182,11 +177,9 @@ void runPicoHFJetMaker(TString inputFile, TString outputFile = "output",
   stPicoHFJetMaker->setNJetsRemove(1);
   stPicoHFJetMaker->setR_bg(0.3);
   stPicoHFJetMaker->setHadronCorr(1.0);
-  stPicoHFJetMaker->setTriggerThreshold(
-      18); //~4.2 GeV is the HT2 threshold = 18 ADC
+  stPicoHFJetMaker->setTriggerThreshold(18); //~4.2 GeV is the HT2 threshold = 18 ADC
   stPicoHFJetMaker->setMaxNeutralFraction(0.95); // default
-  stPicoHFJetMaker->setMaxDcaZHadronCorr(
-      3.0); // cm, max DCA_z for global tracks used for hadronic correction
+  stPicoHFJetMaker->setMaxDcaZHadronCorr(3.0); // cm, max DCA_z for global tracks used for hadronic correction
 
   // Systematics setters
   stPicoHFJetMaker->setDoTowErrPlus(false);

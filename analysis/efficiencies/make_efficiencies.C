@@ -15,6 +15,31 @@
 #include <cstdio>
 #include <cmath>
 
+
+// ---------------- pThat bin tagging via xsecWeight ----------------
+static const int kNPthatBins = 11;
+
+// upper edges for each pThat bin: 3_5 -> 5, ..., 40_50 -> 50, 50_-1 -> -1 (no upper bound)
+static const double kPtHatMax[kNPthatBins] =
+  {5, 7, 9, 11, 15, 20, 25, 30, 40, 50, -1};
+
+// xsecWeight values (must match what is stored in the tree)
+static const double kXsecWeights[kNPthatBins] =
+  {1.616e+0,  1.355e-01, 2.288e-02, 5.524e-03, 2.203e-03,
+   3.437e-04, 4.681e-05, 8.532e-06, 2.178e-06, 1.198e-07, 6.939e-09};
+
+static int FindPtHatBin(double xsecW)
+{
+  // tolerant match (floating point is a lifestyle choice)
+  const double relTol = 1e-6;
+  for (int i = 0; i < kNPthatBins; ++i) {
+    double ref = kXsecWeights[i];
+    double diff = fabs(xsecW - ref);
+    if (diff <= relTol * fabs(ref)) return i;
+  }
+  return -1;
+}
+
 // =========================================================
 //  Jet-quality cuts (must match analysis / maker)
 // =========================================================
@@ -214,7 +239,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_match_mc_num[it] = new TH1D("h_match_mc_num", "Matched MC jets (numerator)",
                                             nbins_mc, xmin_mc, xmax_mc);
                 h_match_mc_eff[it] = (TH1D*)h_match_mc_num[it]->Clone("h_match_mc_eff");
-                h_match_mc_eff[it]->SetTitle("Matching efficiency vs p_{T}^{MC}");
+                h_match_mc_eff[it]->SetTitle("");
 
                 // Trigger efficiency vs reco_pt_corr
                 h_trig_den[it] = new TH1D("h_trig_den", "Reco jets (denominator)",
@@ -222,7 +247,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_trig_num[it] = new TH1D("h_trig_num", "Triggered reco jets (numerator)",
                                         nbins_reco, xmin_reco, xmax_reco);
                 h_trig_eff[it] = (TH1D*)h_trig_num[it]->Clone("h_trig_eff");
-                h_trig_eff[it]->SetTitle("Trigger efficiency vs p_{T}^{corr}");
+                h_trig_eff[it]->SetTitle("");
 
                 // Purity vs reco_pt_corr
                 h_pur_den[it] = new TH1D("h_pur_den", "All reco jets (denominator)",
@@ -230,7 +255,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_pur_num[it] = new TH1D("h_pur_num", "Matched reco jets (numerator)",
                                         nbins_reco, xmin_reco, xmax_reco);
                 h_pur_eff[it] = (TH1D*)h_pur_num[it]->Clone("h_pur_eff");
-                h_pur_eff[it]->SetTitle("Purity vs p_{T}^{corr}");
+                h_pur_eff[it]->SetTitle("");
 
             }
 
@@ -241,15 +266,28 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 // event weight
                 double w = (double) xsecWeight * (double) centralityWeight;
 
+                int ibin = FindPtHatBin((double)xsecWeight);
+                double veto = -1.0;
+                if (ibin >= 0) {
+                double ptHatMax = kPtHatMax[ibin];
+                if (ptHatMax > 0.0) veto = 1.5 * ptHatMax;
+                }
+
                 // Reco quality cuts
                 bool haveReco = (reco_pt > -500.0);
+                bool haveMC = (mc_pt > 0.0);
+
+                if (veto > 0.0) {
+                    if (haveMC   && mc_pt        > veto) continue;
+                    if (haveReco && reco_pt_corr > veto) continue;
+                }
+                
                 bool passRecoCuts = false;
                 if (haveReco) {
                     passRecoCuts = (reco_area >= areaMin &&
                                     reco_neutral_fraction <= CUT_NEUTRAL_FRACTION);
                 }
 
-                bool haveMC = (mc_pt > 0.0);
 
                 // -- Loop over pT_lead thresholds (on reco level, nested) --
                 for (int it = 0; it < N_LEAD_THR; ++it) {
@@ -337,7 +375,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
 
                 TH1D *h_match_mc_eff_reb = (TH1D*)h_match_mc_num_reb->Clone(
                     Form("h_match_mc_eff_reb_%s", tagDirName.Data()));
-                h_match_mc_eff_reb->SetTitle("Matching efficiency vs p_{T}^{MC}");
+                h_match_mc_eff_reb->SetTitle("");
                 h_match_mc_eff_reb->Divide(h_match_mc_num_reb,
                                         h_match_mc_den_reb,
                                         1.0, 1.0, "b");
@@ -349,7 +387,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_match_mc_eff_reb->SetLineColor(kBlue+1);
                 h_match_mc_eff_reb->SetMarkerColor(kBlue+1);
                 h_match_mc_eff_reb->SetMarkerStyle(20);
-                h_match_mc_eff_reb->GetXaxis()->SetTitle("p_{T}^{MC} [GeV]");
+                h_match_mc_eff_reb->GetXaxis()->SetTitle("#it{p}_{T}^{MC} (GeV)");
                 h_match_mc_eff_reb->GetYaxis()->SetTitle("Matching efficiency");
                 h_match_mc_eff_reb->Draw("E1");
                 h_match_mc_eff_reb->SetStats(0);
@@ -369,7 +407,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
 
                 TH1D *h_trig_eff_reb = (TH1D*)h_trig_num_reb->Clone(
                     Form("h_trig_eff_reb_%s", tagDirName.Data()));
-                h_trig_eff_reb->SetTitle("Trigger efficiency vs p_{T}^{corr}");
+                h_trig_eff_reb->SetTitle("");
                 h_trig_eff_reb->Divide(h_trig_num_reb,
                                     h_trig_den_reb,
                                     1.0, 1.0, "b");
@@ -381,7 +419,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_trig_eff_reb->SetLineColor(kRed+1);
                 h_trig_eff_reb->SetMarkerColor(kRed+1);
                 h_trig_eff_reb->SetMarkerStyle(20);
-                h_trig_eff_reb->GetXaxis()->SetTitle("p_{T}^{reco,corr} [GeV]");
+                h_trig_eff_reb->GetXaxis()->SetTitle("#it{p}_{T}^{reco,corr} (GeV)");
                 h_trig_eff_reb->GetYaxis()->SetTitle("Trigger efficiency");
                 h_trig_eff_reb->GetXaxis()->SetRangeUser(-20, 60);
                 h_trig_eff_reb->Draw("E1");
@@ -402,7 +440,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
 
                 TH1D *h_pur_eff_reb = (TH1D*)h_pur_num_reb->Clone(
                     Form("h_pur_eff_reb_%s", tagDirName.Data()));
-                h_pur_eff_reb->SetTitle("Purity vs p_{T}^{corr}");
+                h_pur_eff_reb->SetTitle("");
                 h_pur_eff_reb->Divide(h_pur_num_reb,
                                     h_pur_den_reb,
                                     1.0, 1.0, "b");
@@ -414,7 +452,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_pur_eff_reb->SetLineColor(kGreen+2);
                 h_pur_eff_reb->SetMarkerColor(kGreen+2);
                 h_pur_eff_reb->SetMarkerStyle(20);
-                h_pur_eff_reb->GetXaxis()->SetTitle("p_{T}^{reco,corr} [GeV]");
+                h_pur_eff_reb->GetXaxis()->SetTitle("#it{p}_{T}^{reco,corr} (GeV)");
                 h_pur_eff_reb->GetYaxis()->SetTitle("Purity");
                 h_pur_eff_reb->GetXaxis()->SetRangeUser(-20, 60);
                 h_pur_eff_reb->Draw("E1");

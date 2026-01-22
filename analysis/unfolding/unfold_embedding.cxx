@@ -49,6 +49,34 @@ static const vector<string> kCentralities =
 static const vector<string> kRadii =
   {"R0.2", "R0.3", "R0.4"};
 
+// ---- pThat bins (upper edges) and xsec weights (same order) ----
+static const int kNPthatBins = 11;
+
+// upper edges for each bin: 3_5 -> 5, ..., 40_50 -> 50, 50_-1 -> -1 (no upper bound)
+static const double kPtHatMax[kNPthatBins] =
+  {5, 7, 9, 11, 15, 20, 25, 30, 40, 50, -1};
+
+// xsecWeight values that tag each bin (from your code)
+static const double kXsecWeights[kNPthatBins] =
+  {1.616e+0,  1.355e-01, 2.288e-02, 5.524e-03, 2.203e-03,
+   3.437e-04, 4.681e-05, 8.532e-06, 2.178e-06, 1.198e-07, 6.939e-09};
+
+// reco dummy sentinel (keep real negative jets, reject dummy ~ -999)
+static const double RECO_PTCORR_DUMMY_CUT = -500.0;
+
+// match xsecWeight -> bin index (tolerant compare)
+static int FindPtHatBin(double xsecW)
+{
+  // relative tolerance, because floats are a joy
+  const double relTol = 1e-6;
+  for (int i = 0; i < kNPthatBins; ++i) {
+    double ref = kXsecWeights[i];
+    double diff = fabs(xsecW - ref);
+    if (diff <= relTol * fabs(ref)) return i;
+  }
+  return -1; // unknown
+}
+
 // ------------------ jet-quality cuts -------------------------
 
 // Area cuts per jet radius
@@ -218,15 +246,20 @@ void unfold_embedding(const char* inputFile,
           // weight (same for prior and response)
           const double w = (double)centralityWeight * (double)xsecWeight;
 
+          const bool haveMC  = (mc_pt > 0.0);
+          const bool haveReco = (reco_pt_corr > RECO_PTCORR_DUMMY_CUT);
+
           // ----- fill prior: only MC-side cuts -----
-          if (mc_pt > 0.0 && mc_pt_lead >= cut) {
+          if (haveMC && mc_pt_lead >= cut) {
             hPrior->Fill(mc_pt, w);
           }
 
           // ----- reco-side cuts for response & closure -----
+          if (!haveReco) continue;
+
+          // existing quality/trigger cuts
           if (!reco_trigger_match) continue;
           if (reco_area < areaMin) continue;
-          if (reco_neutral_fraction > CUT_NEUTRAL_FRACTION) continue;
 
           // dual ptlead cut (both reco & MC)
           if (!(reco_pt_lead >= cut && mc_pt_lead >= cut)) continue;
@@ -364,10 +397,10 @@ void unfold_embedding(const char* inputFile,
           double xmin = firstRatio->GetXaxis()->GetXmin();
           double xmax = firstRatio->GetXaxis()->GetXmax();
 
-          TLine* ln1 = new TLine(xmin, 1.05, xmax, 1.05);
+          TLine* ln1 = new TLine(xmin, 1.1, xmax, 1.1);
           ln1->SetLineStyle(2); ln1->SetLineColor(kGray+1); ln1->Draw();
 
-          TLine* ln2 = new TLine(xmin, 0.95, xmax, 0.95);
+          TLine* ln2 = new TLine(xmin, 0.9, xmax, 0.9);
           ln2->SetLineStyle(2); ln2->SetLineColor(kGray+1); ln2->Draw();
         }
 
