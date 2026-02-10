@@ -246,7 +246,7 @@ void unfold_embedding(const char* inputFile,
           // weight (same for prior and response)
           const double w = (double)centralityWeight * (double)xsecWeight;
 
-          const bool haveMC  = (mc_pt > 0.0);
+          const bool haveMC = (mc_pt > 0.0);
           const bool haveReco = (reco_pt_corr > RECO_PTCORR_DUMMY_CUT);
 
           // ----- fill prior: only MC-side cuts -----

@@ -84,11 +84,10 @@ void make_hists(const char *infile  = "embedding_merged.root",
   // choose what variable the reco veto uses:
   // - false: reco_pt (recommended, closer to truth pT before subtraction weirdness)
   // - true : reco_pt_corr
-  const bool USE_RECO_CORR_FOR_VETO = false;
+  const bool USE_RECO_CORR_FOR_VETO = true;
 
-  // apply veto to MC too? (jet-level, not event-level)
-  const bool APPLY_MC_VETO = false;   // you can flip later if you want symmetry
-  const bool APPLY_RECO_VETO = true;
+
+  const bool APPLY_RECO_VETO = false;
 
   TFile *fin = TFile::Open(infile, "READ");
   if (!fin || fin->IsZombie()) {
@@ -258,9 +257,6 @@ void make_hists(const char *infile  = "embedding_merged.root",
         if (pThatMax > 0.0) {
           double vetoMax = 1.5 * pThatMax;
 
-          if (APPLY_MC_VETO) {
-            if (mc_pt > vetoMax) continue;
-          }
 
           if (APPLY_RECO_VETO) {
             double recoForVeto = USE_RECO_CORR_FOR_VETO ? (double)reco_pt_corr : (double)reco_pt;

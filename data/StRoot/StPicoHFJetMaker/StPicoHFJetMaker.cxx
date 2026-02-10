@@ -294,7 +294,7 @@ if (mIsEmbedding && fpThatmax > 0.0 && !MCjetTracks.empty()) {
       return kStOK;
     }
   }
-
+ 
 }
   // RC part
   GetCaloTrackMomentum(mPicoDst, mPrimVtx); // fill array Sump with momenta of tracks which are matched to BEMC
@@ -464,9 +464,10 @@ for (unsigned int i = 0; i < fR.size(); i++) {
     }
   }
 
-  if (ptMaxVeto > 0.0 && !vetoReco && !fullTracks.empty()) {
+  if (ptMaxVeto > 0.0 && !fullTracks.empty()) {
   for (size_t jr = 0; jr < myRecoJets.size(); ++jr) {
     if (myRecoJets[jr].pt_corr > ptMaxVeto) {
+      myRecoJets.clear();
       return kStOK; // veto whole event
     }
   }
