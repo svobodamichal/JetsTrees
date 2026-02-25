@@ -30,39 +30,6 @@ const double RECO_DUMMY_CUT = -500.0;  // your dummy threshold
 const int    N_LEAD = 4;
 const double PTLEAD_THR[N_LEAD] = {0.0, 5.0, 7.0, 9.0};
 
-// =========================================================
-// pThat bins + xsec weights you provided
-// IMPORTANT: these weights must match EXACTLY what is stored in xsecWeight branch.
-// =========================================================
-static const int N_PTHAT = 11;
-
-static const char* PTHAT_NAME[N_PTHAT] = {
-  "3_5","5_7","7_9","9_11","11_15","15_20","20_25","25_30","30_40","40_50","50_-1"
-};
-
-static const float PTHAT_EDGES[N_PTHAT+1] = {
-  3.0, 5.0, 7.0, 9.0, 11.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, -1.0
-};
-
-static const float XSEC_WEIGHTS[N_PTHAT] = {
-  1.616e+0,  1.355e-01, 2.288e-02, 5.524e-03,
-  2.203e-03, 3.437e-04, 4.681e-05, 8.532e-06,
-  2.178e-06, 1.198e-07, 6.939e-09
-};
-
-// tolerance for matching float weights
-static const double XW_TOL = 1e-12;
-
-// Return pThatMax for this xsecWeight, or -1 if unknown/open bin
-double get_pThatMax(double xw) {
-  for (int i = 0; i < N_PTHAT; ++i) {
-    if (fabs((double)xw - (double)XSEC_WEIGHTS[i]) < XW_TOL) {
-      return (double)PTHAT_EDGES[i+1]; // upper edge (may be -1)
-    }
-  }
-  return -1.0;
-}
-
 // helper: choose area cut based on R
 double areaMinForR(double R) {
   if (R < 0.25) return CUT_AREA_02;
@@ -80,14 +47,6 @@ void make_hists(const char *infile  = "embedding_merged.root",
   // where to write PDFs
   const char* pdfTop = "pdf";
   gSystem->mkdir(pdfTop, kTRUE);
-
-  // choose what variable the reco veto uses:
-  // - false: reco_pt (recommended, closer to truth pT before subtraction weirdness)
-  // - true : reco_pt_corr
-  const bool USE_RECO_CORR_FOR_VETO = true;
-
-
-  const bool APPLY_RECO_VETO = false;
 
   TFile *fin = TFile::Open(infile, "READ");
   if (!fin || fin->IsZombie()) {
@@ -250,19 +209,6 @@ void make_hists(const char *infile  = "embedding_merged.root",
         // trigger match
         if (!(reco_trigger_match == kTRUE)) continue;
 
-        // pThat veto based on xsecWeight->pThatMax
-        double pThatMax = get_pThatMax((double)xsecWeight);
-
-        // last bin (50_-1) has pThatMax = -1 => no veto
-        if (pThatMax > 0.0) {
-          double vetoMax = 1.5 * pThatMax;
-
-
-          if (APPLY_RECO_VETO) {
-            double recoForVeto = USE_RECO_CORR_FOR_VETO ? (double)reco_pt_corr : (double)reco_pt;
-            if (recoForVeto > vetoMax) continue;
-          }
-        }
 
         // fill 2D for inclusive (ptlead>=0)
         h2_recoCorr_vs_mc->Fill((double)reco_pt_corr, (double)mc_pt, w);

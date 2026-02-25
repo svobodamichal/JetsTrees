@@ -15,31 +15,6 @@
 #include <cstdio>
 #include <cmath>
 
-
-// ---------------- pThat bin tagging via xsecWeight ----------------
-static const int kNPthatBins = 11;
-
-// upper edges for each pThat bin: 3_5 -> 5, ..., 40_50 -> 50, 50_-1 -> -1 (no upper bound)
-static const double kPtHatMax[kNPthatBins] =
-  {5, 7, 9, 11, 15, 20, 25, 30, 40, 50, -1};
-
-// xsecWeight values (must match what is stored in the tree)
-static const double kXsecWeights[kNPthatBins] =
-  {1.616e+0,  1.355e-01, 2.288e-02, 5.524e-03, 2.203e-03,
-   3.437e-04, 4.681e-05, 8.532e-06, 2.178e-06, 1.198e-07, 6.939e-09};
-
-static int FindPtHatBin(double xsecW)
-{
-  // tolerant match (floating point is a lifestyle choice)
-  const double relTol = 1e-6;
-  for (int i = 0; i < kNPthatBins; ++i) {
-    double ref = kXsecWeights[i];
-    double diff = fabs(xsecW - ref);
-    if (diff <= relTol * fabs(ref)) return i;
-  }
-  return -1;
-}
-
 // =========================================================
 //  Jet-quality cuts (must match analysis / maker)
 // =========================================================
@@ -266,22 +241,10 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 // event weight
                 double w = (double) xsecWeight * (double) centralityWeight;
 
-                int ibin = FindPtHatBin((double)xsecWeight);
-                double veto = -1.0;
-                if (ibin >= 0) {
-                double ptHatMax = kPtHatMax[ibin];
-                if (ptHatMax > 0.0) veto = 1.5 * ptHatMax;
-                }
-
                 // Reco quality cuts
                 bool haveReco = (reco_pt > -500.0);
                 bool haveMC = (mc_pt > 0.0);
 
-                if (veto > 0.0) {
-                    if (haveMC   && mc_pt        > veto) continue;
-                    if (haveReco && reco_pt_corr > veto) continue;
-                }
-                
                 bool passRecoCuts = false;
                 if (haveReco) {
                     passRecoCuts = (reco_area >= areaMin &&
