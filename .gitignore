@@ -9,7 +9,7 @@ data/submit/2*
 inlist*
 *.log
 *.pdf
-.png
+*.png
 *.out
 *.err
 *.csh

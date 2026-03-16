@@ -289,8 +289,11 @@ void make_hists(const char *infile  = "embedding_merged.root",
         tex.DrawLatex(0.32, 0.13, "THIS THESIS");
 
         TString pdfName;
-        pdfName.Form("%s/spectra_ptlead_%s_%s.pdf", pdfCDir.Data(), rname.c_str(), cname.c_str());
+        pdfName.Form("%s/spectra_ptlead_embed_%s_%s.pdf", pdfCDir.Data(), rname.c_str(), cname.c_str());
         c->SaveAs(pdfName.Data());
+        TString pngName = pdfName;
+        pngName.ReplaceAll(".pdf", ".png");
+        c->SaveAs(pngName.Data());
 
         delete leg;
         delete c;

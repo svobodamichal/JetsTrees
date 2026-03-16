@@ -6,6 +6,7 @@
 #include "TCanvas.h"
 #include "TLegend.h"
 #include "TLine.h"
+#include "TLatex.h"
 #include "TRandom3.h"
 #include "TStyle.h"
 #include "TH1D.h"
@@ -46,6 +47,17 @@ static const double bin_truth_edges[nbins_truth+1] = {
 
 static const vector<string> kCentralities =
   {"CENT_0_10", "MID_20_40", "PERI_60_80"};
+
+static TString NiceCentLabel(const std::string& centToken)
+{
+  int a = -1, b = -1;
+  if (sscanf(centToken.c_str(), "CENT_%d_%d", &a, &b) == 2 ||
+      sscanf(centToken.c_str(), "MID_%d_%d", &a, &b) == 2 ||
+      sscanf(centToken.c_str(), "PERI_%d_%d", &a, &b) == 2) {
+    return Form("%d#font[52]{#minus}%d %%", a, b);
+  }
+  return TString(centToken.c_str());
+}
 static const vector<string> kRadii =
   {"R0.2", "R0.3", "R0.4"};
 
@@ -190,10 +202,10 @@ void unfold_embedding(const char* inputFile,
 
         // --- histos: train/test for closure ---
         TH1D* hMeasTrain = new TH1D(("hMeasTrain_"+tag).c_str(),
-            ";reco p_{T}^{corr} [GeV];dN/dp_{T}",
+            ";reco #it{p}_{T}^{corr} (GeV);d{N}/d#it{p}_{T} (GeV^{-1})",
             nbins_meas, bin_meas_edges);
         TH1D* hTrueTrain = new TH1D(("hTrueTrain_"+tag).c_str(),
-            ";mc p_{T} [GeV];dN/dp_{T}",
+            ";mc #it{p}_{T} (GeV);d#it{N}/d#it{p}_{T} (GeV^{-1})",
             nbins_truth, bin_truth_edges);
         TH1D* hMeasTest  = (TH1D*)hMeasTrain->Clone(("hMeasTest_"+tag).c_str());
         TH1D* hTrueTest  = (TH1D*)hTrueTrain->Clone(("hTrueTest_"+tag).c_str());
@@ -205,10 +217,10 @@ void unfold_embedding(const char* inputFile,
 
         // --- full-stat histos (no split) ---
         TH1D* hMeasFull = new TH1D(("hMeasFull_"+tag).c_str(),
-            ";reco p_{T}^{corr} [GeV];dN/dp_{T}",
+            ";reco #it{p}_{T}^{corr} (GeV);d{N}/d#it{p}_{T} (GeV^{-1})",
             nbins_meas, bin_meas_edges);
         TH1D* hTrueFull = new TH1D(("hTrueFull_"+tag).c_str(),
-            ";mc p_{T} [GeV];dN/dp_{T}",
+            ";mc #it{p}_{T} (GeV);d#it{N}/d#it{p}_{T} (GeV^{-1})",
             nbins_truth, bin_truth_edges);
         hMeasFull->SetDirectory(0);
         hTrueFull->SetDirectory(0);
@@ -216,21 +228,21 @@ void unfold_embedding(const char* inputFile,
         // --- response matrices ---
         // For closure (train only)
         TH2D* hRespTrain = new TH2D(("hRespTrain_"+tag).c_str(),
-            ";p_{T}^{reco,corr};p_{T}^{mc}",
+            ";reco #it{p}_{T}^{corr} (GeV);#it{p}_{T}^{mc} (GeV)",
             nbins_meas, bin_meas_edges,
             nbins_truth, bin_truth_edges);
         hRespTrain->SetDirectory(0);
 
         // For full-statistics response (train+test together)
         TH2D* hRespFull = new TH2D(("hRespFull_"+tag).c_str(),
-            ";p_{T}^{reco,corr};p_{T}^{mc}",
+            ";reco #it{p}_{T}^{corr} (GeV);#it{p}_{T}^{mc} (GeV)",
             nbins_meas, bin_meas_edges,
             nbins_truth, bin_truth_edges);
         hRespFull->SetDirectory(0);
 
         // --- prior (truth-only, using *all* jets passing truth-side cuts) ---
         TH1D* hPrior = new TH1D(("hPrior_"+tag).c_str(),
-            ";mc p_{T} [GeV];prior",
+            ";mc #it{p}_{T} (GeV);prior",
             nbins_truth, bin_truth_edges);
         hPrior->SetDirectory(0);
 
@@ -260,6 +272,7 @@ void unfold_embedding(const char* inputFile,
           // existing quality/trigger cuts
           if (!reco_trigger_match) continue;
           if (reco_area < areaMin) continue;
+          if (reco_neutral_fraction > CUT_NEUTRAL_FRACTION) continue;
 
           // dual ptlead cut (both reco & MC)
           if (!(reco_pt_lead >= cut && mc_pt_lead >= cut)) continue;
@@ -330,63 +343,120 @@ void unfold_embedding(const char* inputFile,
         }
 
         // ========================= PLOTTING (closure) =========================
-        TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1200);
-        c->Divide(1,2);
+
+        // Distinct (non-blending) styles for Bayes iterations
+        static const int kUnfCols[4]   = { kRed+1, kAzure+2, kGreen+2, kOrange+7 };
+        static const int kUnfMarks[4]  = { 20, 21, 22, 33 };
+
+        TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1000);
+
+        // --- manual pads (instead of Divide) so we can control spacing ---
+        TPad* pTop = new TPad(("pTop_"+tag).c_str(), "", 0.0, 0.30, 1.0, 1.0);
+        TPad* pBot = new TPad(("pBot_"+tag).c_str(), "", 0.0, 0.00, 1.0, 0.30);
+
+        // tighter margins for slides
+        pTop->SetLeftMargin(0.12);
+        pTop->SetRightMargin(0.03);
+        pTop->SetTopMargin(0.05);
+        pTop->SetBottomMargin(0.02);   // tiny: bottom pad will carry x labels
+
+        pBot->SetLeftMargin(0.12);
+        pBot->SetRightMargin(0.03);
+        pBot->SetTopMargin(0.02);
+        pBot->SetBottomMargin(0.30);   // room for x-axis title/labels
+
+        pTop->Draw();
+        pBot->Draw();
 
         // ---------- top pad: shapes in TRUTH binning ----------
-        c->cd(1);
+        pTop->cd();
         gPad->SetLogy();
 
         TH1D* hT_plot = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
         hT_plot->SetMarkerStyle(20);
+        hT_plot->SetMarkerColor(kBlack);
         hT_plot->SetLineColor(kBlack);
 
         TH1D* hM_truth = (TH1D*)hMeasTest->Rebin(
-            nbins_truth,
-            ("hMeasTruthBins_"+tag).c_str(),
-            bin_truth_edges);
+          nbins_truth, ("hMeasTruthBins_"+tag).c_str(), bin_truth_edges
+        );
         hM_truth->SetMarkerStyle(24);
-        hM_truth->SetLineColor(kBlue+1);
+        hM_truth->SetMarkerColor(kBlue+2);
+        hM_truth->SetLineColor(kBlue+2);
 
-        hT_plot->GetXaxis()->SetTitle("p_{T} [GeV]");
+        // Top pad: hide x labels to save space (bottom pad will have them)
+        hT_plot->GetXaxis()->SetLabelSize(0);
+        hT_plot->GetXaxis()->SetTitleSize(0);
+
+        hT_plot->GetYaxis()->SetTitleOffset(1.2);
         hT_plot->Draw("E1");
         hM_truth->Draw("E1 SAME");
 
-        TLegend* leg = new TLegend(0.58,0.58,0.88,0.88);
-        leg->AddEntry(hT_plot,  "Truth (test)",    "lp");
+        TLegend* leg = new TLegend(0.55,0.60,0.90,0.90);
+        leg->SetBorderSize(0);
+        leg->SetFillStyle(0);
+        leg->SetTextSize(0.035);
+
+        leg->AddEntry(hT_plot, "Truth (test)", "lp");
         leg->AddEntry(hM_truth, "Measured (test)", "lp");
 
         for (int ib = 0; ib < kNBayesIters; ++ib) {
           TH1D* w = unfoldedTruth[ib];
           if (!w) continue;
-          w->SetMarkerStyle(20);
-          w->SetMarkerColor(kMagenta + ib);
-          w->SetLineColor(kMagenta + ib);
+
+          w->SetMarkerStyle(kUnfMarks[ib]);
+          w->SetMarkerColor(kUnfCols[ib]);
+          w->SetLineColor(kUnfCols[ib]);
+
           w->Draw("E1 SAME");
           leg->AddEntry(w, Form("Bayes %d it.", kBayesIters[ib]), "lp");
         }
         leg->Draw();
 
+        {
+          TLatex lat;
+          lat.SetNDC(true);
+          lat.SetTextFont(42);
+          lat.SetTextSize(0.040);
+          lat.DrawLatex(0.16, 0.28, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
+          lat.DrawLatex(0.16, 0.22,
+                        Form("#it{R} = %.1f, %s", Rval, NiceCentLabel(C).Data()));
+          lat.DrawLatex(0.16, 0.16, Form("#it{p}_{T}^{lead} #geq %.0f GeV/#it{c}", cut));
+        }
+
         // ---------- bottom pad: ratio unfolded / truth ----------
-        c->cd(2);
-        gPad->SetGridy();
+        pBot->cd();
 
         TH1D* firstRatio = 0;
-
         for (int ib = 0; ib < kNBayesIters; ++ib) {
           TH1D* hunf_reb = unfoldedTruth[ib];
           if (!hunf_reb) continue;
 
-          TH1D* r = (TH1D*)hunf_reb->Clone(
-              Form("ratio_%d_%s", kBayesIters[ib], tag.c_str()));
+          TH1D* r = (TH1D*)hunf_reb->Clone(Form("ratio_%d_%s", kBayesIters[ib], tag.c_str()));
           r->SetDirectory(0);
           r->Divide(hTrueTest);
+
+          // match styles to top pad
+          r->SetMarkerStyle(kUnfMarks[ib]);
+          r->SetMarkerColor(kUnfCols[ib]);
+          r->SetLineColor(kUnfCols[ib]);
 
           if (!firstRatio) {
             firstRatio = r;
             firstRatio->SetTitle("");
             firstRatio->GetYaxis()->SetTitle("Unfolded / Truth");
             firstRatio->GetYaxis()->SetRangeUser(0.0, 2.0);
+
+            // bottom pad must carry x-axis title + labels
+            firstRatio->GetXaxis()->SetTitle("#it{p}_{T} (GeV)");
+            firstRatio->GetXaxis()->SetTitleSize(0.11);
+            firstRatio->GetXaxis()->SetLabelSize(0.09);
+            firstRatio->GetXaxis()->SetTitleOffset(1.05);
+
+            firstRatio->GetYaxis()->SetTitleSize(0.09);
+            firstRatio->GetYaxis()->SetLabelSize(0.08);
+            firstRatio->GetYaxis()->SetTitleOffset(0.65);
+
             firstRatio->Draw("E1");
           } else {
             r->Draw("E1 SAME");
@@ -396,16 +466,25 @@ void unfold_embedding(const char* inputFile,
         if (firstRatio) {
           double xmin = firstRatio->GetXaxis()->GetXmin();
           double xmax = firstRatio->GetXaxis()->GetXmax();
-
           TLine* ln1 = new TLine(xmin, 1.1, xmax, 1.1);
-          ln1->SetLineStyle(2); ln1->SetLineColor(kGray+1); ln1->Draw();
-
+          ln1->SetLineStyle(2);
+          ln1->SetLineColor(kGray+1);
+          ln1->Draw();
           TLine* ln2 = new TLine(xmin, 0.9, xmax, 0.9);
-          ln2->SetLineStyle(2); ln2->SetLineColor(kGray+1); ln2->Draw();
+          ln2->SetLineStyle(2);
+          ln2->SetLineColor(kGray+1);
+          ln2->Draw();
         }
 
         // ---------- save ----------
         const string pdfPath = string(outDir) + "/closure_" + tagfile + ".pdf";
+        c->SaveAs(pdfPath.c_str());
+        {
+          string pngPath = pdfPath;
+          const size_t pos = pngPath.rfind(".pdf");
+          if (pos != string::npos) pngPath.replace(pos, 4, ".png");
+          c->SaveAs(pngPath.c_str());
+        }
 
         // create a directory for this (R, centrality, ptlead) inside fout
         TDirectory* d = fout->mkdir(tagfile.c_str());
@@ -439,6 +518,12 @@ void unfold_embedding(const char* inputFile,
         }
 
         c->SaveAs(pdfPath.c_str());
+        {
+          string pngPath = pdfPath;
+          const size_t pos = pngPath.rfind(".pdf");
+          if (pos != string::npos) pngPath.replace(pos, 4, ".png");
+          c->SaveAs(pngPath.c_str());
+        }
 
         // ---------- cleanup ----------
         delete c;

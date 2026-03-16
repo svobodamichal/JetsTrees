@@ -195,6 +195,11 @@ static void DrawOne(TH2* h2,
   p->Draw();
 
   c->SaveAs(outPdf);
+  {
+    TString outPng = outPdf;
+    outPng.ReplaceAll(".pdf", ".png");
+    c->SaveAs(outPng);
+  }
 
   delete p;
   delete c;

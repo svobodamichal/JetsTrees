@@ -268,8 +268,11 @@ void make_hists_data(const char *infile  = "data_merged.root",
         tex.DrawLatex(0.60, 0.51, "THIS THESIS");
 
         TString pdfName;
-        pdfName.Form("%s/spectra_ptlead_%s_%s.pdf", pdfCDir.Data(), rname.c_str(), cname.c_str());
+        pdfName.Form("%s/spectra_ptlead_data_%s_%s.pdf", pdfCDir.Data(), rname.c_str(), cname.c_str());
         c->SaveAs(pdfName.Data());
+        TString pngName = pdfName;
+        pngName.ReplaceAll(".pdf", ".png");
+        c->SaveAs(pngName.Data());
 
         delete leg;
         delete c;

@@ -14,6 +14,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <cmath>
 
 using std::string;
 using std::vector;
@@ -61,6 +62,23 @@ static void EnsureDir(const string& path){
     gSystem->mkdir(path.c_str(), /*recursive=*/true);
 }
 
+static bool SameBinning1D(const TH1* a, const TH1* b, double tol = 1e-6);
+
+static TH1D* GetEffHistChecked(TFile* fEff,
+                               const std::string& tagdirName,
+                               const char* objName,
+                               const TH1* ref,
+                               const char* cloneNameForOut,
+                               bool verbose = true);
+
+static void ApplyDivideCorr(TH1D* spec,
+                            const TH1D* eff,
+                            bool verbose = true);
+
+static void ApplyMultiplyCorr(TH1D* spec,
+                              const TH1D* fac,
+                              bool verbose = true);                            
+
 /**
  * dataFile     : real data jets (with JetTree)
  * responseFile : single ROOT file containing per-tag directories:
@@ -70,8 +88,9 @@ static void EnsureDir(const string& path){
  */
 void unfold_data(const char* dataFile,
                  const char* responseFile,
+                 const char* effFile,
                  const char* outDir,
-                 int nIter /* = kBayesIterDefault */)
+                 int nIter = kBayesIterDefault)
 {
   gStyle->SetOptStat(0);
   EnsureDir(outDir);
@@ -90,12 +109,21 @@ void unfold_data(const char* dataFile,
     return;
   }
 
+  TFile* fEff = TFile::Open(effFile, "READ");
+  if (!fEff || fEff->IsZombie()) {
+    cout << "[error] Cannot open efficiencies file: " << effFile << endl;
+    fRespAll->Close(); delete fRespAll;
+    fData->Close();    delete fData;
+    return;
+  }
+
   const string outRootPath = string(outDir) + "/unfolded_data.root";
   TFile* fOutAll = TFile::Open(outRootPath.c_str(), "RECREATE");
   if (!fOutAll || fOutAll->IsZombie()) {
     cout << "[error] Cannot create output file: " << outRootPath << endl;
+    fEff->Close();     delete fEff;
     fRespAll->Close(); delete fRespAll;
-    fData->Close();   delete fData;
+    fData->Close();    delete fData;
     return;
   }
 
@@ -138,20 +166,18 @@ void unfold_data(const char* dataFile,
       tr->SetBranchStatus("reco_pt_lead", 1);
       tr->SetBranchStatus("reco_trigger_match", 1);
       tr->SetBranchStatus("centralityWeight", 1);
-      tr->SetBranchStatus("xsecWeight", 1);
       tr->SetBranchStatus("reco_area", 1);
       tr->SetBranchStatus("reco_neutral_fraction", 1);
 
       float reco_pt_corr=0, reco_pt_lead=0;
       Bool_t reco_trigger_match=kFALSE;
-      float centralityWeight=1.0f, xsecWeight=1.0f;
+      float centralityWeight=1.0f;
       float reco_area=0.0f, reco_neutral_fraction=0.0f;
 
       tr->SetBranchAddress("reco_pt_corr", &reco_pt_corr);
       tr->SetBranchAddress("reco_pt_lead", &reco_pt_lead);
       tr->SetBranchAddress("reco_trigger_match", &reco_trigger_match);
       tr->SetBranchAddress("centralityWeight", &centralityWeight);
-      tr->SetBranchAddress("xsecWeight", &xsecWeight);
       tr->SetBranchAddress("reco_area", &reco_area);
       tr->SetBranchAddress("reco_neutral_fraction", &reco_neutral_fraction);
 
@@ -182,7 +208,7 @@ void unfold_data(const char* dataFile,
 
           tr->GetEntry(i);
 
-          const double w = (double)centralityWeight * (double)xsecWeight;
+          const double w = (double)centralityWeight;
 
           if (!reco_trigger_match)               continue;
           if (reco_area < areaMin)               continue;
@@ -193,13 +219,58 @@ void unfold_data(const char* dataFile,
         }
         cout << "\n    data integral = " << hMeasData->Integral(0,-1) << endl;
 
+        // -------- Trigger efficiency correction (RECO binning, BEFORE unfolding) --------
+         TH1D* hMeasData_raw = (TH1D*)hMeasData->Clone(Form("hMeasData_raw_%s", tag.c_str()));
+         hMeasData_raw->SetDirectory(0);
+
+        // // Load trigger efficiency (must match measured binning)
+        // TH1D* hTrigEffReco = GetEffHistChecked(
+        //     fEff,
+        //     tagfile,
+        //     "h_trig_eff_reco",
+        //     hMeasData,
+        //     Form("hTrigEffReco_%s", tag.c_str()),
+        //     /*verbose=*/true);
+
+        // if (hTrigEffReco) {
+        //   ApplyDivideCorr(hMeasData, hTrigEffReco, /*verbose=*/true);
+        //   cout << "    data integral after trig-eff corr = "
+        //       << hMeasData->Integral(0,-1) << endl;
+        // }
+
+        TH1D* hTrigEffReco = 0; // TEMP: trig-eff disabled
+
+
+        TH1D* hMeasData_trigCorr = (TH1D*)hMeasData->Clone(Form("hMeasData_trigCorr_%s", tag.c_str()));
+        hMeasData_trigCorr->SetDirectory(0);
+
+        // ---- Purity correction (fake removal) ----
+        // TH1D* hPurityReco = GetEffHistChecked(
+        //     fEff,
+        //     tagfile,
+        //     "h_pur_eff_reco",          
+        //     hMeasData,                 // same binning as current measured spectrum
+        //     Form("hPurityReco_%s", tag.c_str()),
+        //     /*verbose=*/true);
+
+        // if (hPurityReco) {
+        //   ApplyMultiplyCorr(hMeasData, hPurityReco, /*verbose=*/true);
+        //   cout << "    data integral after purity corr = "
+        //       << hMeasData->Integral(0,-1) << endl;
+        // }
+
+         TH1D* hPurityReco = 0; // TEMP: purity correction disabled
+
         // ---------------- load response & prior ----------------
         TDirectory* dResp =
           dynamic_cast<TDirectory*>(fRespAll->Get(tagfile.c_str()));
         if (!dResp) {
-          cout << "    [ERROR] no directory '" << tagfile
-               << "' in response file --> skipping this tag\n";
+          cout << "    [ERROR] no directory '" << tagfile << "' in response file --> skipping this tag\n";
           delete hMeasData;
+          delete hMeasData_raw;
+          delete hMeasData_trigCorr;
+          if (hTrigEffReco) delete hTrigEffReco;
+          if (hPurityReco)  delete hPurityReco;
           continue;
         }
 
@@ -208,9 +279,16 @@ void unfold_data(const char* dataFile,
         RooUnfoldResponse* response = 0;
         dResp->GetObject("response", response);
         if (!response) {
-          cout << "    [ERROR] object 'response' not found in dir "
-               << tagfile << " --> skipping\n";
+          cout << "    [ERROR] object 'response' not found in dir " << tagfile
+              << " --> skipping\n";
+
           delete hMeasData;
+          delete hMeasData_raw;
+          delete hMeasData_trigCorr;
+
+          if (hTrigEffReco) delete hTrigEffReco;
+          if (hPurityReco)  delete hPurityReco;
+
           continue;
         }
 
@@ -232,35 +310,63 @@ void unfold_data(const char* dataFile,
         hUnfoldedRecoBins->SetDirectory(0);
 
         // Rebin to truth binning (this is what you'll use later)
-        TH1D* hUnfoldedTruthBins = (TH1D*)hUnfoldedRecoBins->Rebin(
+        TH1D* hUnfoldedTruthBins_raw = (TH1D*)hUnfoldedRecoBins->Rebin(
             nbins_truth,
-            Form("UnfoldedTruthBins_%s", tag.c_str()),
+            Form("hUnfoldedTruthBins_raw_%s", tag.c_str()),
             bin_truth_edges);
-        hUnfoldedTruthBins->SetDirectory(0);
+        hUnfoldedTruthBins_raw->SetDirectory(0);
 
-        cout << "    unfolded integral (truth bins) = "
-             << hUnfoldedTruthBins->Integral(0,-1) << endl;
+        // -------- Matching efficiency correction (TRUTH binning, AFTER unfolding) --------
+        // TH1D* hMatchEffTruth = GetEffHistChecked(
+        //     fEff,
+        //     tagfile,
+        //     "h_match_eff_truth",
+        //     hUnfoldedTruthBins_raw,
+        //     Form("hMatchEffTruth_%s", tag.c_str()),
+        //     /*verbose=*/true);
+
+        // TH1D* hUnfoldedTruthBins_matchCorr = 0;
+        // if (hMatchEffTruth) {
+        //   hUnfoldedTruthBins_matchCorr = (TH1D*)hUnfoldedTruthBins_raw->Clone(
+        //       Form("hUnfoldedTruthBins_matchCorr_%s", tag.c_str()));
+        //   hUnfoldedTruthBins_matchCorr->SetDirectory(0);
+
+        //   ApplyDivideCorr(hUnfoldedTruthBins_matchCorr, hMatchEffTruth, /*verbose=*/true);
+        // }
+
+        TH1D* hMatchEffTruth = 0;               // TEMP: match-eff disabled
+        TH1D* hUnfoldedTruthBins_matchCorr = 0; // keep null
 
         // ---------------- save to output file ----------------
         TDirectory* dOut = fOutAll->mkdir(tagfile.c_str());
         if (!dOut) dOut = fOutAll->GetDirectory(tagfile.c_str());
         dOut->cd();
 
-        hMeasData->Write("hMeasData");
-        hUnfoldedRecoBins->Write("hUnfoldedRecoBins");
-        hUnfoldedTruthBins->Write("hUnfoldedTruthBins");
+        hMeasData_raw->Write("hMeasData_raw", TObject::kOverwrite);
+        hMeasData_trigCorr->Write("hMeasData_trigCorr", TObject::kOverwrite);
+        hMeasData->Write("hMeasData_trigPurCorr", TObject::kOverwrite);
+        if (hTrigEffReco)  hTrigEffReco->Write("hTrigEffReco", TObject::kOverwrite);
+        if (hPurityReco)   hPurityReco->Write("hPurityReco", TObject::kOverwrite);
+        hUnfoldedRecoBins->Write("hUnfoldedRecoBins", TObject::kOverwrite);
+        hUnfoldedTruthBins_raw->Write("hUnfoldedTruthBins_raw", TObject::kOverwrite);
+        if (hMatchEffTruth) hMatchEffTruth->Write("hMatchEffTruth", TObject::kOverwrite);
+        if (hUnfoldedTruthBins_matchCorr) hUnfoldedTruthBins_matchCorr->Write("hUnfoldedTruthBins_matchCorr", TObject::kOverwrite);
 
-        // optional: save covariance matrix
         TMatrixD cov = unfold.Eunfold(RooUnfold::kCovariance);
-        cov.Write("covariance");
-
-        cout << "    wrote unfolded spectra into directory '"
-             << tagfile << "' in " << outRootPath << endl;
-
+        cov.Write("covariance", TObject::kOverwrite);
+        
         // cleanup
         delete hMeasData;
+        delete hMeasData_raw;
+        if (hTrigEffReco) delete hTrigEffReco;
+
         delete hUnfoldedRecoBins;
-        delete hUnfoldedTruthBins;
+        delete hUnfoldedTruthBins_raw;
+
+        delete hMeasData_trigCorr;
+        if (hPurityReco) delete hPurityReco;
+        if (hMatchEffTruth) delete hMatchEffTruth;
+        if (hUnfoldedTruthBins_matchCorr) delete hUnfoldedTruthBins_matchCorr;
       } // ptlead cuts
     } // centralities
   } // radii
@@ -275,7 +381,123 @@ void unfold_data(const char* dataFile,
   fData->Close();
   delete fData;
 
+  fEff->Close();
+  delete fEff;
+
   cout << "\nAll done. Unfolded data written to: "
        << outRootPath << "\n";
 }
 
+// ==================================================
+// Helper implementations
+// ==================================================
+
+static bool SameBinning1D(const TH1* a, const TH1* b, double tol)
+{
+  if (!a || !b) return false;
+  if (a->GetNbinsX() != b->GetNbinsX()) return false;
+
+  const TAxis* ax = a->GetXaxis();
+  const TAxis* bx = b->GetXaxis();
+
+  for (int ib = 1; ib <= a->GetNbinsX(); ++ib) {
+    if (std::fabs(ax->GetBinLowEdge(ib) - bx->GetBinLowEdge(ib)) > tol) return false;
+    if (std::fabs(ax->GetBinUpEdge(ib)  - bx->GetBinUpEdge(ib))  > tol) return false;
+  }
+  return true;
+}
+
+static TH1D* GetEffHistChecked(TFile* fEff,
+                               const std::string& tagdirName,
+                               const char* objName,
+                               const TH1* ref,
+                               const char* cloneNameForOut,
+                               bool verbose)
+{
+  if (!fEff || !ref) return 0;
+
+  TDirectory* d = dynamic_cast<TDirectory*>(fEff->Get(tagdirName.c_str()));
+  if (!d) {
+    if (verbose) cout << "    [ERROR] no dir '" << tagdirName << "' in eff file\n";
+    return 0;
+  }
+
+  TH1D* h = 0;
+  d->GetObject(objName, h);
+  if (!h) {
+    if (verbose) cout << "    [ERROR] missing '" << objName << "' in " << tagdirName << "\n";
+    return 0;
+  }
+
+  if (!SameBinning1D(h, ref)) {
+    if (verbose) cout << "    [ERROR] binning mismatch for " << objName << "\n";
+    return 0;
+  }
+
+  TH1D* hc = (TH1D*)h->Clone(cloneNameForOut);
+  hc->SetDirectory(0);
+  return hc;
+}
+
+static void ApplyDivideCorr(TH1D* spec,
+                            const TH1D* eff,
+                            bool verbose)
+{
+  if (!spec || !eff) return;
+
+  for (int ib = 1; ib <= spec->GetNbinsX(); ++ib) {
+    const double y  = spec->GetBinContent(ib);
+    const double ey = spec->GetBinError(ib);
+    const double e  = eff->GetBinContent(ib);
+    const double ee = eff->GetBinError(ib);
+
+    if (e > 0.0) {
+      const double ycorr = y / e;
+      double ecorr = (y > 0.0)
+        ? ycorr * std::sqrt((ey*ey)/(y*y) + (ee*ee)/(e*e))
+        : ey / e;
+
+      spec->SetBinContent(ib, ycorr);
+      spec->SetBinError(ib, ecorr);
+    } else {
+      spec->SetBinContent(ib, 0.0);
+      spec->SetBinError(ib, 0.0);
+    }
+  }
+
+  if (verbose)
+    cout << "    applied divide correction: " << eff->GetName() << endl;
+}
+
+static void ApplyMultiplyCorr(TH1D* spec,
+                              const TH1D* fac,
+                              bool verbose)
+{
+  if (!spec || !fac) return;
+
+  for (int ib = 1; ib <= spec->GetNbinsX(); ++ib) {
+    const double y  = spec->GetBinContent(ib);
+    const double ey = spec->GetBinError(ib);
+    const double f  = fac->GetBinContent(ib);
+    const double ef = fac->GetBinError(ib);
+
+    // Multiplication: y' = y * f
+    const double ycorr = y * f;
+
+    double ecorr = 0.0;
+    if (y != 0.0 && f != 0.0) {
+      const double rel2 = (ey*ey)/(y*y) + (ef*ef)/(f*f);
+      ecorr = std::fabs(ycorr) * std::sqrt(rel2);
+    } else {
+      // if one factor is zero, absolute propagation:
+      // ycorr = y*f, so d(ycorr)^2 = (f*ey)^2 + (y*ef)^2
+      ecorr = std::sqrt((f*ey)*(f*ey) + (y*ef)*(y*ef));
+    }
+
+    spec->SetBinContent(ib, ycorr);
+    spec->SetBinError(ib, ecorr);
+  }
+
+  if (verbose)
+    cout << "    applied multiply correction: " << fac->GetName() << endl;
+}

@@ -32,14 +32,17 @@ else
 fi
 
 # 2nd arg: RESPONSE ROOT FILE (single file with all tag directories)
-# default: responses from embedding under unfolding/out_embedding
 RESP_FILE="${2:-${SCRIPT_DIR}/out_embedding/responses_embedding.root}"
 
-# 3rd arg: output directory for unfolded data spectra
-OUT_DIR="${3:-${SCRIPT_DIR}/out_data}"
+# 3rd arg: EFFICIENCIES ROOT FILE
+# default: analysis/efficiencies/efficiencies.root (based on your folder layout)
+EFF_FILE="${3:-${BASE}/analysis/efficiencies/efficiencies.root}"
 
-# 4th arg: number of Bayes iterations
-NITER="${4:-4}"
+# 4th arg: output directory for unfolded data spectra
+OUT_DIR="${4:-${SCRIPT_DIR}/out_data}"
+
+# 5th arg: number of Bayes iterations
+NITER="${5:-4}"
 
 ########################
 # Checks
@@ -53,6 +56,7 @@ echo "SIF         : $SIF"
 echo "Macro       : $MACRO"
 echo "Input data  : $INPUT"
 echo "Resp. file  : $RESP_FILE"
+echo "Eff. file   : $EFF_FILE"
 echo "Output dir  : $OUT_DIR"
 echo "Iterations  : $NITER"
 echo "----------------------------------------"
@@ -61,6 +65,7 @@ echo "----------------------------------------"
 [[ -f "$MACRO"     ]] || { echo "ERROR: MACRO not found:     $MACRO";     exit 1; }
 [[ -f "$INPUT"     ]] || { echo "ERROR: Input not found:     $INPUT";     exit 1; }
 [[ -f "$RESP_FILE" ]] || { echo "ERROR: Resp. file not found: $RESP_FILE"; exit 1; }
+[[ -f "$EFF_FILE"  ]] || { echo "ERROR: Eff. file not found: $EFF_FILE"; exit 1; }
 
 mkdir -p "$OUT_DIR"
 
@@ -73,7 +78,7 @@ apptainer exec -e -B /gpfs01 \
   "$SIF" \
   root -l -b <<EOF
 gSystem->Load("libRooUnfold");
-.x ${MACRO}+("${INPUT}","${RESP_FILE}","${OUT_DIR}",${NITER});
+.x ${MACRO}+("${INPUT}","${RESP_FILE}","${EFF_FILE}","${OUT_DIR}",${NITER});
 .q
 EOF
 

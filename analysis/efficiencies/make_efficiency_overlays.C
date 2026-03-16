@@ -181,13 +181,29 @@ static TH1D* GetEfficiencyHist(TDirectory* d, const TString& tag, const char* mo
 {
   if (!d) return 0;
 
-  TString hDenReb, hNumReb;
+  // Prefer rebinned numerator/denominator written by make_efficiencies.C
+  TString hDenReb, hNumReb, hEffReb;
   if (strcmp(mode, "match") == 0) {
-    hDenReb.Form("h_match_mc_den_reb_%s", tag.Data());
-    hNumReb.Form("h_match_mc_num_reb_%s", tag.Data());
-  } else {
-    hDenReb.Form("h_trig_den_reb_%s", tag.Data());
-    hNumReb.Form("h_trig_num_reb_%s", tag.Data());
+    hDenReb = "h_match_den_truth";
+    hNumReb = "h_match_num_truth";
+    hEffReb = "h_match_eff_truth";
+  } else if (strcmp(mode, "trig") == 0) {
+    hDenReb = "h_trig_den_reco";
+    hNumReb = "h_trig_num_reco";
+    hEffReb = "h_trig_eff_reco";
+  } else { // purity
+    hDenReb = "h_pur_den_reco";
+    hNumReb = "h_pur_num_reco";
+    hEffReb = "h_pur_eff_reco";
+  }
+
+  // If rebinned efficiency exists directly, use it
+  TH1D* hEffDirect = (TH1D*)d->Get(hEffReb);
+  if (hEffDirect) {
+    TH1D* hOut = (TH1D*)hEffDirect->Clone(Form("tmp_%s_effreb_%s", mode, tag.Data()));
+    hOut->SetDirectory(0);
+    hOut->SetTitle("");
+    return hOut;
   }
 
   TH1D* hDen = (TH1D*)d->Get(hDenReb);
@@ -200,7 +216,9 @@ static TH1D* GetEfficiencyHist(TDirectory* d, const TString& tag, const char* mo
     return hEff;
   }
 
-  TString hEffFine = (strcmp(mode, "match") == 0) ? "h_match_mc_eff" : "h_trig_eff";
+  TString hEffFine = "h_trig_eff";
+  if (strcmp(mode, "match") == 0) hEffFine = "h_match_mc_eff";
+  if (strcmp(mode, "pur") == 0) hEffFine = "h_pur_eff";
   TH1D* hf = (TH1D*)d->Get(hEffFine);
   if (hf) {
     TH1D* hc2 = (TH1D*)hf->Clone(Form("tmp_%s_efffine_%s", mode, tag.Data()));
@@ -332,6 +350,8 @@ void make_efficiency_overlays(const char* infile = "efficiencies.root",
           TString out;
           out.Form("%s/MatchEff_overlay_%s_ptlead%d.pdf", outdir, centTok.c_str(), ptlead);
           c->SaveAs(out);
+          out.ReplaceAll(".pdf", ".png");
+          c->SaveAs(out);
         }
 
         delete leg;
@@ -406,6 +426,85 @@ void make_efficiency_overlays(const char* infile = "efficiencies.root",
 
           TString out;
           out.Form("%s/TrigEff_overlay_%s_ptlead%d.pdf", outdir, centTok.c_str(), ptlead);
+          c->SaveAs(out);
+          out.ReplaceAll(".pdf", ".png");
+          c->SaveAs(out);
+        }
+
+        delete leg;
+        delete c;
+      }
+
+      // ===================== PURITY (OVERLAY) =====================
+      {
+        TCanvas* c = new TCanvas("c_pur_overlay", "c_pur_overlay", 800, 600);
+
+        // Legend left, below the centrality/pTlead block
+        TLegend* leg = new TLegend(0.18, 0.14, 0.42, 0.32);
+        leg->SetBorderSize(0);
+        leg->SetFillStyle(0);
+        leg->SetTextFont(42);
+        leg->SetTextSize(0.040);
+
+        bool drew = false;
+        double yMax = 0.0;
+
+        // yMax scan
+        for (size_t ir = 0; ir < radii.size(); ++ir) {
+          std::string r = radii[ir];
+          TString tag; tag.Form("%s_%s_ptlead%d", r.c_str(), centTok.c_str(), ptlead);
+          TDirectory* d = (TDirectory*)f->Get(tag);
+          if (!d) continue;
+          TH1D* hEff = GetEfficiencyHist(d, tag, "pur");
+          if (!hEff) continue;
+          double m = hEff->GetMaximum();
+          if (m > yMax) yMax = m;
+          delete hEff;
+        }
+        if (yMax <= 0.0) yMax = 1.0;
+
+        for (size_t ir2 = 0; ir2 < radii.size(); ++ir2) {
+          std::string r = radii[ir2];
+          TString tag; tag.Form("%s_%s_ptlead%d", r.c_str(), centTok.c_str(), ptlead);
+
+          TDirectory* d = (TDirectory*)f->Get(tag);
+          if (!d) continue;
+
+          TH1D* hc = GetEfficiencyHist(d, tag, "pur");
+          if (!hc) continue;
+
+          int st = (int)(ir2 % nStyles);
+          hc->SetLineColor(colors[st]);
+          hc->SetMarkerColor(colors[st]);
+          hc->SetMarkerStyle(markers[st]);
+          hc->SetMarkerSize(1.0);
+          hc->SetLineWidth(2);
+          hc->SetStats(0);
+
+          hc->GetXaxis()->SetTitle("#it{p}_{T}^{reco,corr} (GeV/#it{c})");
+          hc->GetYaxis()->SetTitle("Purity");
+          hc->GetXaxis()->SetRangeUser(-20.0, 60.0);
+          hc->GetYaxis()->SetRangeUser(0.0, 1.15 * yMax);
+
+          if (!drew) { hc->Draw("E1"); drew = true; }
+          else       { hc->Draw("E1 SAME"); }
+
+          leg->AddEntry(hc, r.c_str(), "lep");
+        }
+
+        if (drew) {
+          // Header upper-left
+          DrawTextBlock(0.16, 0.88, 13, 0.045, hdr1, hdr2);
+
+          // Centrality + ptlead: LEFT-MIDDLE under header
+          DrawTextBlock(0.16, 0.74, 13, 0.040, centLine.Data(), leadLine.Data());
+
+          leg->Draw();
+
+          TString out;
+          out.Form("%s/Purity_overlay_%s_ptlead%d.pdf", outdir, centTok.c_str(), ptlead);
+          c->SaveAs(out);
+          out.ReplaceAll(".pdf", ".png");
           c->SaveAs(out);
         }
 
