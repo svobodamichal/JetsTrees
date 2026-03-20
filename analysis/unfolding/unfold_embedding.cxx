@@ -1,12 +1,14 @@
 #include "RooUnfoldBayes.h"
 #include "RooUnfoldResponse.h"
+#include "RooUnfoldSvd.h"
+#include "TSVDUnfold.h"
 
 #include "TFile.h"
 #include "TTree.h"
 #include "TCanvas.h"
 #include "TLegend.h"
-#include "TLine.h"
 #include "TLatex.h"
+#include "TLine.h"
 #include "TRandom3.h"
 #include "TStyle.h"
 #include "TH1D.h"
@@ -23,17 +25,14 @@ using std::cout;
 using std::endl;
 
 // ------------------------- config -----------------------------
-
-static const int kBayesIters[] = {1, 4, 5, 7};
-static const int kNBayesIters = sizeof(kBayesIters)/sizeof(kBayesIters[0]);
-
-static const double kTestFrac = 0.50;     // 50/50 split
+static const double kTestFrac = 0.50;  // 50/50 split
 static const UInt_t kSeed     = 12345;    // deterministic split
 
 static const double kPtLeadCuts[] = {0.0, 5.0, 7.0, 9.0};
 static const int    kNPtLeadCuts  = sizeof(kPtLeadCuts)/sizeof(kPtLeadCuts[0]);
 
 // measured & truth binning
+//----------------------------------------------------------------- original binning 
 static const int nbins_meas = 24;
 static const double bin_meas_edges[nbins_meas+1] = {
   -100,-80,-60,-40,-20,-10,-5,-2.5,0,2.5,5,7.5,10,12.5,15,17.5,
@@ -44,6 +43,54 @@ static const int nbins_truth = 10;
 static const double bin_truth_edges[nbins_truth+1] = {
   0,5,10,15,20,25,30,35,40,50,60
 };
+//----------------------------------------------------------------- bin choice: 1
+
+// static const int nbins_truth = 7;
+// static const double bin_truth_edges[nbins_truth+1] = {
+//   0, 5, 10, 15, 20, 30, 40, 60
+// };
+
+
+// static const int nbins_meas = 18;
+// static const double bin_meas_edges[nbins_meas+1] = {
+//   -100,-80,-60,-40,-20,-10,-5,-2.5,0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60
+// };
+
+// --------------------------------------------------------------bin choice: 2
+
+// static const int nbins_truth = 10;
+// static const double bin_truth_edges[nbins_truth+1] = {
+//   0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60
+// };
+
+
+// static const int nbins_meas = 18;
+// static const double bin_meas_edges[nbins_meas+1] = {
+//   -100,-80,-60,-40,-20,-10,-5,-2.5,0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60
+// };
+// --------------------------------------------------------------bin choice: 3 (same as 2 but with finer low-pt bins)
+// static const int nbins_truth = 10;
+// static const double bin_truth_edges[nbins_truth+1] = {
+//   0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60
+// };
+
+
+// static const int nbins_meas = 18;
+// static const double bin_meas_edges[nbins_meas+1] = {
+//   -100,-80,-60,-40,-20,-10,-5,-2.5,0, 3, 6, 9, 12, 15, 20, 30, 40, 50, 60
+// };
+// --------------------------------------------------------------bin choice: 4
+// static const int nbins_truth = 10;
+// static const double bin_truth_edges[nbins_truth+1] = {
+//   0, 6, 10, 15, 20, 25, 30, 35, 40, 50, 60
+// };
+
+
+// static const int nbins_meas = 23;
+// static const double bin_meas_edges[nbins_meas+1] = {
+//   -100,-80,-60,-40,-20,-10,-5,-2.5,0, 2, 4, 6, 8, 10, 12.5, 15, 17.5, 20, 25 , 30, 35, 40, 50, 60
+// };
+
 
 static const vector<string> kCentralities =
   {"CENT_0_10", "MID_20_40", "PERI_60_80"};
@@ -58,6 +105,7 @@ static TString NiceCentLabel(const std::string& centToken)
   }
   return TString(centToken.c_str());
 }
+
 static const vector<string> kRadii =
   {"R0.2", "R0.3", "R0.4"};
 
@@ -108,8 +156,11 @@ static void EnsureDir(const string& path){
 
 // Main macro: builds closure + full-statistics responses
 void unfold_embedding(const char* inputFile,
-                      const char* outDir)
+                      const char* outDir, const char* method = "BAYES")
 {
+  std::string m(method);
+  std::cout << ">>> Unfolding method = " << m << std::endl;
+
   gStyle->SetOptStat(0);
   EnsureDir(outDir);
   TH1::SetDefaultSumw2(kTRUE);
@@ -202,10 +253,10 @@ void unfold_embedding(const char* inputFile,
 
         // --- histos: train/test for closure ---
         TH1D* hMeasTrain = new TH1D(("hMeasTrain_"+tag).c_str(),
-            ";reco #it{p}_{T}^{corr} (GeV);d{N}/d#it{p}_{T} (GeV^{-1})",
+            ";reco p_{T}^{corr} [GeV];dN/dp_{T}",
             nbins_meas, bin_meas_edges);
         TH1D* hTrueTrain = new TH1D(("hTrueTrain_"+tag).c_str(),
-            ";mc #it{p}_{T} (GeV);d#it{N}/d#it{p}_{T} (GeV^{-1})",
+            ";mc p_{T} [GeV];dN/dp_{T}",
             nbins_truth, bin_truth_edges);
         TH1D* hMeasTest  = (TH1D*)hMeasTrain->Clone(("hMeasTest_"+tag).c_str());
         TH1D* hTrueTest  = (TH1D*)hTrueTrain->Clone(("hTrueTest_"+tag).c_str());
@@ -217,10 +268,10 @@ void unfold_embedding(const char* inputFile,
 
         // --- full-stat histos (no split) ---
         TH1D* hMeasFull = new TH1D(("hMeasFull_"+tag).c_str(),
-            ";reco #it{p}_{T}^{corr} (GeV);d{N}/d#it{p}_{T} (GeV^{-1})",
+            ";reco p_{T}^{corr} [GeV];dN/dp_{T}",
             nbins_meas, bin_meas_edges);
         TH1D* hTrueFull = new TH1D(("hTrueFull_"+tag).c_str(),
-            ";mc #it{p}_{T} (GeV);d#it{N}/d#it{p}_{T} (GeV^{-1})",
+            ";mc p_{T} [GeV];dN/dp_{T}",
             nbins_truth, bin_truth_edges);
         hMeasFull->SetDirectory(0);
         hTrueFull->SetDirectory(0);
@@ -228,21 +279,21 @@ void unfold_embedding(const char* inputFile,
         // --- response matrices ---
         // For closure (train only)
         TH2D* hRespTrain = new TH2D(("hRespTrain_"+tag).c_str(),
-            ";reco #it{p}_{T}^{corr} (GeV);#it{p}_{T}^{mc} (GeV)",
+            ";p_{T}^{reco,corr};p_{T}^{mc}",
             nbins_meas, bin_meas_edges,
             nbins_truth, bin_truth_edges);
         hRespTrain->SetDirectory(0);
 
         // For full-statistics response (train+test together)
         TH2D* hRespFull = new TH2D(("hRespFull_"+tag).c_str(),
-            ";reco #it{p}_{T}^{corr} (GeV);#it{p}_{T}^{mc} (GeV)",
+            ";p_{T}^{reco,corr};p_{T}^{mc}",
             nbins_meas, bin_meas_edges,
             nbins_truth, bin_truth_edges);
         hRespFull->SetDirectory(0);
 
         // --- prior (truth-only, using *all* jets passing truth-side cuts) ---
         TH1D* hPrior = new TH1D(("hPrior_"+tag).c_str(),
-            ";mc #it{p}_{T} (GeV);prior",
+            ";mc p_{T} [GeV];prior",
             nbins_truth, bin_truth_edges);
         hPrior->SetDirectory(0);
 
@@ -268,11 +319,11 @@ void unfold_embedding(const char* inputFile,
 
           // ----- reco-side cuts for response & closure -----
           if (!haveReco) continue;
+          if (reco_neutral_fraction > CUT_NEUTRAL_FRACTION) continue;
 
           // existing quality/trigger cuts
           if (!reco_trigger_match) continue;
           if (reco_area < areaMin) continue;
-          if (reco_neutral_fraction > CUT_NEUTRAL_FRACTION) continue;
 
           // dual ptlead cut (both reco & MC)
           if (!(reco_pt_lead >= cut && mc_pt_lead >= cut)) continue;
@@ -320,176 +371,510 @@ void unfold_embedding(const char* inputFile,
         RooUnfoldResponse response_closure(hMeasTrain, hTrueTrain, hRespTrain);
         response_closure.SetName(("response_closure_"+tag).c_str());
 
-        // --- unfolding (closure) with explicit prior ---
-        vector<TH1D*> unfolded(kNBayesIters, 0);
-        for (int ib = 0; ib < kNBayesIters; ++ib) {
-          RooUnfoldBayes u(&response_closure, hMeasTest,
-                           kBayesIters[ib], false, hPrior);
-          TH1D* hunf = (TH1D*)u.Hunfold();
-          hunf->SetDirectory(0);
-          hunf->SetName(Form("Unfolded_%s_iter%d", tag.c_str(), kBayesIters[ib]));
-          unfolded[ib] = hunf;
-        }
 
-        // Rebin unfolded to truth binning (for plotting & ratio)
-        vector<TH1D*> unfoldedTruth(kNBayesIters, 0);
-        for (int ib = 0; ib < kNBayesIters; ++ib) {
-          if (!unfolded[ib]) continue;
-          unfoldedTruth[ib] = (TH1D*)unfolded[ib]->Rebin(
-              nbins_truth,
-              Form("UnfTruthBins_%d_%s", kBayesIters[ib], tag.c_str()),
-              bin_truth_edges);
-          unfoldedTruth[ib]->SetDirectory(0);
-        }
 
-        // ========================= PLOTTING (closure) =========================
+      // --- BAYESIAN unfolding ---
 
-        // Distinct (non-blending) styles for Bayes iterations
-        static const int kUnfCols[4]   = { kRed+1, kAzure+2, kGreen+2, kOrange+7 };
-        static const int kUnfMarks[4]  = { 20, 21, 22, 33 };
+        if (m == "BAYES") {
+          cout << "Doing Bayesian unfolding..." << endl;
+          static const int kBayesIters[] = {1, 4, 5, 7};
+          static const int kNBayesIters = sizeof(kBayesIters)/sizeof(kBayesIters[0]);
 
-        TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1000);
 
-        // --- manual pads (instead of Divide) so we can control spacing ---
-        TPad* pTop = new TPad(("pTop_"+tag).c_str(), "", 0.0, 0.30, 1.0, 1.0);
-        TPad* pBot = new TPad(("pBot_"+tag).c_str(), "", 0.0, 0.00, 1.0, 0.30);
-
-        // tighter margins for slides
-        pTop->SetLeftMargin(0.12);
-        pTop->SetRightMargin(0.03);
-        pTop->SetTopMargin(0.05);
-        pTop->SetBottomMargin(0.02);   // tiny: bottom pad will carry x labels
-
-        pBot->SetLeftMargin(0.12);
-        pBot->SetRightMargin(0.03);
-        pBot->SetTopMargin(0.02);
-        pBot->SetBottomMargin(0.30);   // room for x-axis title/labels
-
-        pTop->Draw();
-        pBot->Draw();
-
-        // ---------- top pad: shapes in TRUTH binning ----------
-        pTop->cd();
-        gPad->SetLogy();
-
-        TH1D* hT_plot = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
-        hT_plot->SetMarkerStyle(20);
-        hT_plot->SetMarkerColor(kBlack);
-        hT_plot->SetLineColor(kBlack);
-
-        TH1D* hM_truth = (TH1D*)hMeasTest->Rebin(
-          nbins_truth, ("hMeasTruthBins_"+tag).c_str(), bin_truth_edges
-        );
-        hM_truth->SetMarkerStyle(24);
-        hM_truth->SetMarkerColor(kBlue+2);
-        hM_truth->SetLineColor(kBlue+2);
-
-        // Top pad: hide x labels to save space (bottom pad will have them)
-        hT_plot->GetXaxis()->SetLabelSize(0);
-        hT_plot->GetXaxis()->SetTitleSize(0);
-
-        hT_plot->GetYaxis()->SetTitleOffset(1.2);
-        hT_plot->Draw("E1");
-        hM_truth->Draw("E1 SAME");
-
-        TLegend* leg = new TLegend(0.55,0.60,0.90,0.90);
-        leg->SetBorderSize(0);
-        leg->SetFillStyle(0);
-        leg->SetTextSize(0.035);
-
-        leg->AddEntry(hT_plot, "Truth (test)", "lp");
-        leg->AddEntry(hM_truth, "Measured (test)", "lp");
-
-        for (int ib = 0; ib < kNBayesIters; ++ib) {
-          TH1D* w = unfoldedTruth[ib];
-          if (!w) continue;
-
-          w->SetMarkerStyle(kUnfMarks[ib]);
-          w->SetMarkerColor(kUnfCols[ib]);
-          w->SetLineColor(kUnfCols[ib]);
-
-          w->Draw("E1 SAME");
-          leg->AddEntry(w, Form("Bayes %d it.", kBayesIters[ib]), "lp");
-        }
-        leg->Draw();
-
-        {
-          TLatex lat;
-          lat.SetNDC(true);
-          lat.SetTextFont(42);
-          lat.SetTextSize(0.040);
-          lat.DrawLatex(0.16, 0.28, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
-          lat.DrawLatex(0.16, 0.22,
-                        Form("#it{R} = %.1f, %s", Rval, NiceCentLabel(C).Data()));
-          lat.DrawLatex(0.16, 0.16, Form("#it{p}_{T}^{lead} #geq %.0f GeV/#it{c}", cut));
-        }
-
-        // ---------- bottom pad: ratio unfolded / truth ----------
-        pBot->cd();
-
-        TH1D* firstRatio = 0;
-        for (int ib = 0; ib < kNBayesIters; ++ib) {
-          TH1D* hunf_reb = unfoldedTruth[ib];
-          if (!hunf_reb) continue;
-
-          TH1D* r = (TH1D*)hunf_reb->Clone(Form("ratio_%d_%s", kBayesIters[ib], tag.c_str()));
-          r->SetDirectory(0);
-          r->Divide(hTrueTest);
-
-          // match styles to top pad
-          r->SetMarkerStyle(kUnfMarks[ib]);
-          r->SetMarkerColor(kUnfCols[ib]);
-          r->SetLineColor(kUnfCols[ib]);
-
-          if (!firstRatio) {
-            firstRatio = r;
-            firstRatio->SetTitle("");
-            firstRatio->GetYaxis()->SetTitle("Unfolded / Truth");
-            firstRatio->GetYaxis()->SetRangeUser(0.0, 2.0);
-
-            // bottom pad must carry x-axis title + labels
-            firstRatio->GetXaxis()->SetTitle("#it{p}_{T} (GeV)");
-            firstRatio->GetXaxis()->SetTitleSize(0.11);
-            firstRatio->GetXaxis()->SetLabelSize(0.09);
-            firstRatio->GetXaxis()->SetTitleOffset(1.05);
-
-            firstRatio->GetYaxis()->SetTitleSize(0.09);
-            firstRatio->GetYaxis()->SetLabelSize(0.08);
-            firstRatio->GetYaxis()->SetTitleOffset(0.65);
-
-            firstRatio->Draw("E1");
-          } else {
-            r->Draw("E1 SAME");
+          // --- unfolding (closure) with explicit prior ---
+          vector<TH1D*> unfolded(kNBayesIters, 0);
+          for (int ib = 0; ib < kNBayesIters; ++ib) {
+            RooUnfoldBayes u(&response_closure, hMeasTest,
+                            kBayesIters[ib], false, hPrior);
+            TH1D* hunf = (TH1D*)u.Hunfold();
+            hunf->SetDirectory(0);
+            hunf->SetName(Form("Unfolded_%s_iter%d", tag.c_str(), kBayesIters[ib]));
+            unfolded[ib] = hunf;
           }
+
+          // Rebin unfolded to truth binning (for plotting & ratio)
+          vector<TH1D*> unfoldedTruth(kNBayesIters, 0);
+          for (int ib = 0; ib < kNBayesIters; ++ib) {
+            if (!unfolded[ib]) continue;
+            unfoldedTruth[ib] = (TH1D*)unfolded[ib]->Rebin(
+                nbins_truth,
+                Form("UnfTruthBins_%d_%s", kBayesIters[ib], tag.c_str()),
+                bin_truth_edges);
+            unfoldedTruth[ib]->SetDirectory(0);
+          }
+
+         
+          // ========================= PLOTTING (closure) =========================
+
+          // Distinct (non-blending) styles for Bayes iterations
+          static const int kUnfCols[4]   = { kRed+1, kAzure+2, kGreen+2, kOrange+7 };
+          static const int kUnfMarks[4]  = { 20, 21, 22, 33 };
+
+          TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1000);
+
+          // --- manual pads (instead of Divide) so we can control spacing ---
+          TPad* pTop = new TPad(("pTop_"+tag).c_str(), "", 0.0, 0.30, 1.0, 1.0);
+          TPad* pBot = new TPad(("pBot_"+tag).c_str(), "", 0.0, 0.00, 1.0, 0.30);
+
+          // tighter margins for slides
+          pTop->SetLeftMargin(0.12);
+          pTop->SetRightMargin(0.03);
+          pTop->SetTopMargin(0.05);
+          pTop->SetBottomMargin(0.02);   // tiny: bottom pad will carry x labels
+
+          pBot->SetLeftMargin(0.12);
+          pBot->SetRightMargin(0.03);
+          pBot->SetTopMargin(0.02);
+          pBot->SetBottomMargin(0.30);   // room for x-axis title/labels
+
+          pTop->Draw();
+          pBot->Draw();
+
+          // ---------- top pad: shapes in TRUTH binning ----------
+          pTop->cd();
+          gPad->SetLogy();
+
+          TH1D* hT_plot = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
+          hT_plot->SetMarkerStyle(20);
+          hT_plot->SetMarkerColor(kBlack);
+          hT_plot->SetLineColor(kBlack);
+
+          TH1D* hM_truth = (TH1D*)hMeasTest->Rebin(
+            nbins_truth, ("hMeasTruthBins_"+tag).c_str(), bin_truth_edges
+          );
+          hM_truth->SetMarkerStyle(24);
+          hM_truth->SetMarkerColor(kBlue+2);
+          hM_truth->SetLineColor(kBlue+2);
+
+          // Top pad: hide x labels to save space (bottom pad will have them)
+          hT_plot->GetXaxis()->SetLabelSize(0);
+          hT_plot->GetXaxis()->SetTitleSize(0);
+
+          hT_plot->GetYaxis()->SetTitleOffset(1.2);
+          hT_plot->Draw("E1");
+          hM_truth->Draw("E1 SAME");
+
+          TLegend* leg = new TLegend(0.55,0.60,0.90,0.90);
+          leg->SetBorderSize(0);
+          leg->SetFillStyle(0);
+          leg->SetTextSize(0.035);
+
+          leg->AddEntry(hT_plot, "Truth (test)", "lp");
+          leg->AddEntry(hM_truth, "Measured (test)", "lp");
+
+          for (int ib = 0; ib < kNBayesIters; ++ib) {
+            TH1D* w = unfoldedTruth[ib];
+            if (!w) continue;
+
+            w->SetMarkerStyle(kUnfMarks[ib]);
+            w->SetMarkerColor(kUnfCols[ib]);
+            w->SetLineColor(kUnfCols[ib]);
+
+            w->Draw("E1 SAME");
+            leg->AddEntry(w, Form("Bayes %d it.", kBayesIters[ib]), "lp");
+          }
+          leg->Draw();
+
+          {
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextFont(42);
+            lat.SetTextSize(0.040);
+            lat.DrawLatex(0.16, 0.28, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
+            lat.DrawLatex(0.16, 0.22,
+                          Form("#it{R} = %.1f, %s", Rval, NiceCentLabel(C).Data()));
+            lat.DrawLatex(0.16, 0.16, Form("#it{p}_{T}^{lead} #geq %.0f GeV/#it{c}", cut));
+            lat.DrawLatex(0.16, 0.10, "Unfolding method: Bayesian");
+          }
+
+          // ---------- bottom pad: ratio unfolded / truth ----------
+          pBot->cd();
+          //pBot->SetGridy();
+
+          TH1D* firstRatio = 0;
+          for (int ib = 0; ib < kNBayesIters; ++ib) {
+            TH1D* hunf_reb = unfoldedTruth[ib];
+            if (!hunf_reb) continue;
+
+            TH1D* r = (TH1D*)hunf_reb->Clone(Form("ratio_%d_%s", kBayesIters[ib], tag.c_str()));
+            r->SetDirectory(0);
+            r->Divide(hTrueTest);
+
+            // match styles to top pad
+            r->SetMarkerStyle(kUnfMarks[ib]);
+            r->SetMarkerColor(kUnfCols[ib]);
+            r->SetLineColor(kUnfCols[ib]);
+
+            if (!firstRatio) {
+              firstRatio = r;
+              firstRatio->SetTitle("");
+              firstRatio->GetYaxis()->SetTitle("Unfolded / Truth");
+              firstRatio->GetYaxis()->SetRangeUser(0.4, 1.6);
+
+              // bottom pad must carry x-axis title + labels
+              firstRatio->GetXaxis()->SetTitle("#it{p}_{T} (GeV)");
+              firstRatio->GetXaxis()->SetTitleSize(0.11);
+              firstRatio->GetXaxis()->SetLabelSize(0.09);
+              firstRatio->GetXaxis()->SetTitleOffset(1.05);
+
+              firstRatio->GetYaxis()->SetTitleSize(0.09);
+              firstRatio->GetYaxis()->SetLabelSize(0.08);
+              firstRatio->GetYaxis()->SetTitleOffset(0.65);
+
+              firstRatio->Draw("E1");
+            } else {
+              r->Draw("E1 SAME");
+            }
+          }
+          
+          if (firstRatio) {
+            double xmin = firstRatio->GetXaxis()->GetXmin();
+            double xmax = firstRatio->GetXaxis()->GetXmax();
+            TLine* ln1 = new TLine(xmin, 1.05, xmax, 1.05);
+            ln1->SetLineStyle(2);
+            ln1->SetLineColor(kGray);
+            ln1->Draw();
+            TLine* ln2 = new TLine(xmin, 0.95, xmax, 0.95);
+            ln2->SetLineStyle(2);
+            ln2->SetLineColor(kGray);
+            ln2->Draw();
+            TLine* ln3 = new TLine(xmin, 1.00, xmax, 1.00);
+            ln3->SetLineStyle(1);
+            ln3->SetLineColor(kBlack);
+            ln3->Draw();
+            TLine* ln4 = new TLine(xmin, 0.90, xmax, 0.90);
+            ln4->SetLineStyle(2);
+            ln4->SetLineColor(kGray+2);
+            ln4->Draw();
+            TLine* ln5 = new TLine(xmin, 1.1, xmax, 1.1);
+            ln5->SetLineStyle(2);
+            ln5->SetLineColor(kGray+2);
+            ln5->Draw();
+          }
+
+          // ---------- save ----------
+          const string pdfPath = string(outDir) + "/BAYES_closure_" + tagfile + ".pdf";
+        
+          
+
+            // create a directory for this (R, centrality, ptlead) inside fout
+            TDirectory* d = fout->mkdir(tagfile.c_str());
+            if (!d) d = fout->GetDirectory(tagfile.c_str());
+            d->cd();
+
+            // Store full-statistics response (for data)
+            hRespFull->Write("hRespRecoVsTruth_full");
+            response_full.Write("response");  // <-- THIS is what unfold_data reads
+
+            hMeasFull->Write("hMeasFull");
+            hTrueFull->Write("hTrueFull");
+
+            // Store closure response + components
+            hRespTrain->Write("hRespRecoVsTruth_train");
+            response_closure.Write("response_closure");
+
+            hMeasTrain->Write("hMeasTrain");
+            hTrueTrain->Write("hTrueTrain");
+            hMeasTest ->Write("hMeasTest");
+            hTrueTest ->Write("hTrueTest");
+            hPrior    ->Write("hPrior");  // save the prior used
+
+            // optionally save unfolded spectra for closure checks
+            for (int ib = 0; ib < kNBayesIters; ++ib) {
+              if (unfolded[ib]) {
+                unfolded[ib]->Write(
+                  Form("Unfolded_iter%d", kBayesIters[ib])
+                );
+              }
+            }
+            c->SaveAs(pdfPath.c_str());
+            {
+              string pngPath = pdfPath;
+              const size_t pos = pngPath.rfind(".pdf");
+              if (pos != string::npos) pngPath.replace(pos, 4, ".png");
+              c->SaveAs(pngPath.c_str());
+            }
+
+            // ---------- cleanup ----------
+            delete c;
+            delete hT_plot;
+            delete hM_truth;
+            delete hRespTrain;
+            delete hRespFull;
+            delete hMeasTrain;
+            delete hTrueTrain;
+            delete hMeasTest;
+            delete hTrueTest;
+            delete hMeasFull;
+            delete hTrueFull;
+            delete hPrior;
+            delete leg;
+            for (size_t ib = 0; ib < unfolded.size(); ++ib) {
+              if (unfolded[ib]) delete unfolded[ib];
+            }
+            for (size_t ib = 0; ib < unfoldedTruth.size(); ++ib) {
+              if (unfoldedTruth[ib]) delete unfoldedTruth[ib];
+            }
+        } // end of BAYESIAN unfolding
+
+
+
+      // --- SVD unfolding ---
+       else if (m == "SVD") {
+          cout << "Doing SVD unfolding..." << endl;
+          //const int kRegValues[] = {2, 3, 4, 5, 6, 7, 8, 9};
+          //const int kRegValues[] = {2, 3, 4, 5, 6};
+          const int kRegValues[] = {3, 4, 5};
+          const int nSVD = sizeof(kRegValues)/sizeof(kRegValues[0]);
+
+          vector<TH1D*> unfoldedSVD(nSVD, nullptr);
+          for (int ir = 0; ir < nSVD; ++ir) {
+            const int reg = kRegValues[ir];
+            RooUnfoldSvd u(&response_closure, hMeasTest, reg);
+            // optionally switch on regularization via SVD settings:
+            // u.SetRegParam(reg); // not necessary with ctor but shown for clarity
+            
+            TH1D* hunf = dynamic_cast<TH1D*>(u.Hunfold());
+            if (!hunf) {
+              cout << "[error] SVD unfolding failed for reg=" << reg << endl;
+              continue;
+            }
+            hunf->SetDirectory(nullptr);
+            hunf->SetName(Form("Unfolded_SVD_%s_reg%d", tag.c_str(), reg));
+            unfoldedSVD[ir] = hunf;
+              // Now access diagnostics — Hunfold() must have been called first
+               auto* svdImpl = u.Impl();
+                if (svdImpl) {
+                    TVectorD sv = svdImpl->GetSV();
+                    cout << "=== Singular values (reg=" << reg << ") ===" << endl;
+                    for (int i = 0; i < sv.GetNrows(); i++)
+                        cout << Form("  Mode %2d : SV = %10.6e", i, sv[i]) << endl;
+
+                    TH1* d = svdImpl->GetD();
+                    if (d) {
+                        cout << "=== d-vector (reg=" << reg << ") ===" << endl;
+                        for (int i = 1; i <= d->GetNbinsX(); i++)
+                            cout << Form("  Mode %2d : |d_i| = %10.6e", i, fabs(d->GetBinContent(i))) << endl;
+                    } else {
+                        cout << "[note] d still null after Hunfold() for reg=" << reg << endl;
+                    }
+                }
+
+              // // Access the internal SVD implementation
+              // auto* impl = u.Impl();
+              // if (!impl) {
+              //   cout << "[warning] Could not access SVD implementation" << endl;
+              //   continue;
+              // }
+
+              // cout << "\n=== SVD diagnostics for k_reg = " << reg << " ===" << endl;
+              
+              // // Get the singular values and d-vector from implementation
+              // TVectorD sv = impl->GetSV();
+              // TH1* d = impl->GetD();
+              
+               
+
+              //   cout << "=== Singular values ===" << endl;
+              //   for (int i = 0; i < sv.GetNrows(); i++) {
+              //       cout << Form("Mode %2d : SV = %10.6e", i, sv[i]) << endl;
+              //   }
+
+              //   for (int i = 0; i < d->GetNbinsX(); i++){
+              //     cout << Form("Mode %2d : |d_i| = %10.6e", i+1, fabs(d->GetBinContent(i+1))) << endl;
+              //   }
+
+                 cout << "Getting impl..." << endl;
+                auto* impl = u.Impl();
+                if (!impl) { cout << "[warning] impl is null" << endl; continue; }
+
+                cout << "Getting SV..." << endl;
+                TVectorD sv = impl->GetSV();
+                cout << "SV rows: " << sv.GetNrows() << endl;
+
+                cout << "=== Singular values ===" << endl;
+                for (int i = 0; i < sv.GetNrows(); i++)
+                  cout << Form("Mode %2d : SV = %10.6e", i, sv[i]) << endl;
+
+                cout << "Getting D..." << endl;
+                TH1* d = impl->GetD();
+                cout << "D pointer: " << (void*)d << endl;
+                if (!d) { cout << "[warning] d is null" << endl; continue; }
+
+                cout << "D nbins: " << d->GetNbinsX() << endl;
+                for (int i = 1; i <= d->GetNbinsX(); i++)
+                  cout << Form("Mode %2d : |d_i| = %10.6e", i, fabs(d->GetBinContent(i))) << endl;
+
+
+          }
+
+          // Rebin unfolded to truth binning (for plotting & ratio)
+          vector<TH1D*> unfoldedTruth(nSVD, nullptr);
+          for (int iSVD = 0; iSVD < nSVD; ++iSVD) {
+            if (!unfoldedSVD[iSVD]) continue;
+            unfoldedTruth[iSVD] = (TH1D*)unfoldedSVD[iSVD]->Rebin(
+                nbins_truth,
+                Form("UnfTruthBins_%d_%s", kRegValues[iSVD], tag.c_str()),
+                bin_truth_edges);
+            unfoldedTruth[iSVD]->SetDirectory(nullptr);
         }
 
-        if (firstRatio) {
-          double xmin = firstRatio->GetXaxis()->GetXmin();
-          double xmax = firstRatio->GetXaxis()->GetXmax();
-          TLine* ln1 = new TLine(xmin, 1.1, xmax, 1.1);
-          ln1->SetLineStyle(2);
-          ln1->SetLineColor(kGray+1);
-          ln1->Draw();
-          TLine* ln2 = new TLine(xmin, 0.9, xmax, 0.9);
-          ln2->SetLineStyle(2);
-          ln2->SetLineColor(kGray+1);
-          ln2->Draw();
-        }
+          // ========================= PLOTTING (closure) =========================
 
-        // ---------- save ----------
-        const string pdfPath = string(outDir) + "/closure_" + tagfile + ".pdf";
-        c->SaveAs(pdfPath.c_str());
-        {
-          string pngPath = pdfPath;
-          const size_t pos = pngPath.rfind(".pdf");
-          if (pos != string::npos) pngPath.replace(pos, 4, ".png");
-          c->SaveAs(pngPath.c_str());
-        }
+          // Distinct (non-blending) styles for SVD regularization values
+          static const int kUnfCols[5]   = { kRed+1, kAzure+2, kGreen+2, kOrange+7, kMagenta+2,};
+          static const int kUnfMarks[5]  = { 20, 21, 22, 33, 34 };
 
+          TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1000);
+
+          // --- manual pads (instead of Divide) so we can control spacing ---
+          TPad* pTop = new TPad(("pTop_"+tag).c_str(), "", 0.0, 0.30, 1.0, 1.0);
+          TPad* pBot = new TPad(("pBot_"+tag).c_str(), "", 0.0, 0.00, 1.0, 0.30);
+
+          // tighter margins for slides
+          pTop->SetLeftMargin(0.12);
+          pTop->SetRightMargin(0.03);
+          pTop->SetTopMargin(0.02);
+          pTop->SetBottomMargin(0.02);   // tiny: bottom pad will carry x labels
+
+          pBot->SetLeftMargin(0.12);
+          pBot->SetRightMargin(0.03);
+          pBot->SetTopMargin(0.02);
+          pBot->SetBottomMargin(0.30);   // room for x-axis title/labels
+
+          pTop->Draw();
+          pBot->Draw();
+
+          // ---------- top pad: shapes in TRUTH binning ----------
+          pTop->cd();
+          gPad->SetLogy();
+
+          TH1D* hT_plot_svd = (TH1D*)hTrueTest->Clone(("hTrueW_"+tag).c_str());
+          hT_plot_svd->SetMarkerStyle(20);
+          hT_plot_svd->SetMarkerColor(kBlack);
+          hT_plot_svd->SetLineColor(kBlack);
+
+          TH1D* hM_truth_svd = (TH1D*)hMeasTest->Rebin(
+            nbins_truth, ("hMeasTruthBins_"+tag).c_str(), bin_truth_edges
+          );
+          hM_truth_svd->SetMarkerStyle(24);
+          hM_truth_svd->SetMarkerColor(kBlue+2);
+          hM_truth_svd->SetLineColor(kBlue+2);
+
+          // Top pad: hide x labels to save space (bottom pad will have them)
+          hT_plot_svd->GetXaxis()->SetLabelSize(0);
+          hT_plot_svd->GetXaxis()->SetTitleSize(0);
+
+          hT_plot_svd->GetYaxis()->SetTitleOffset(1.2);
+          hT_plot_svd->Draw("E1");
+          hM_truth_svd->Draw("E1 SAME");
+
+          TLegend* leg_svd = new TLegend(0.55,0.60,0.90,0.90);
+          leg_svd->SetBorderSize(0);
+          leg_svd->SetFillStyle(0);
+          leg_svd->SetTextSize(0.035);
+
+          leg_svd->AddEntry(hT_plot_svd, "Truth (test)", "lp");
+          leg_svd->AddEntry(hM_truth_svd, "Measured (test)", "lp");
+
+          for (int iSVD = 0; iSVD < nSVD; ++iSVD) {
+            TH1D* w = unfoldedTruth[iSVD];
+            if (!w) continue;
+
+            w->SetMarkerStyle(kUnfMarks[iSVD]);
+            w->SetMarkerColor(kUnfCols[iSVD]);
+            w->SetLineColor(kUnfCols[iSVD]);
+
+            w->Draw("E1 SAME");
+            leg_svd->AddEntry(w, Form("k_reg = %d ", kRegValues[iSVD]), "lp");
+          }
+          leg_svd->Draw();
+
+          {
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextFont(42);
+            lat.SetTextSize(0.040);
+            lat.DrawLatex(0.16, 0.28, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
+            lat.DrawLatex(0.16, 0.22,
+                          Form("#it{R} = %.1f, %s", Rval, NiceCentLabel(C).Data()));
+            lat.DrawLatex(0.16, 0.16, Form("#it{p}_{T}^{lead} #geq %.0f GeV/#it{c}", cut));
+            lat.DrawLatex(0.16, 0.10, "Unfolding method: SVD");
+          }
+
+          // ---------- bottom pad: ratio unfolded / truth ----------
+          pBot->cd();
+          //pBot->SetGridy();
+
+          TH1D* firstRatio = 0;
+          for (int iSVD = 0; iSVD < nSVD; ++iSVD) {
+            TH1D* hunf_reb = unfoldedTruth[iSVD];
+            if (!hunf_reb) continue;
+
+            TH1D* r = (TH1D*)hunf_reb->Clone(Form("ratio_%d_%s", kRegValues[iSVD], tag.c_str()));
+            r->SetDirectory(0);
+            r->Divide(hTrueTest);
+
+            // match styles to top pad
+            r->SetMarkerStyle(kUnfMarks[iSVD]);
+            r->SetMarkerColor(kUnfCols[iSVD]);
+            r->SetLineColor(kUnfCols[iSVD]);
+
+            if (!firstRatio) {
+              firstRatio = r;
+              firstRatio->SetTitle("");
+              firstRatio->GetYaxis()->SetTitle("Unfolded / Truth");
+              firstRatio->GetYaxis()->SetRangeUser(0.4, 1.6);
+
+              // bottom pad must carry x-axis title + labels
+              firstRatio->GetXaxis()->SetTitle("#it{p}_{T} (GeV)");
+              firstRatio->GetXaxis()->SetTitleSize(0.11);
+              firstRatio->GetXaxis()->SetLabelSize(0.09);
+              firstRatio->GetXaxis()->SetTitleOffset(1.05);
+
+              firstRatio->GetYaxis()->SetTitleSize(0.09);
+              firstRatio->GetYaxis()->SetLabelSize(0.08);
+              firstRatio->GetYaxis()->SetTitleOffset(0.65);
+
+              firstRatio->Draw("E1");
+            } else {
+              r->Draw("E1 SAME");
+            }
+          }
+
+          if (firstRatio) {
+            double xmin = firstRatio->GetXaxis()->GetXmin();
+            double xmax = firstRatio->GetXaxis()->GetXmax();
+            TLine* ln1 = new TLine(xmin, 1.05, xmax, 1.05);
+            ln1->SetLineStyle(2);
+            ln1->SetLineColor(kGray);
+            ln1->Draw();
+            TLine* ln2 = new TLine(xmin, 0.95, xmax, 0.95);
+            ln2->SetLineStyle(2);
+            ln2->SetLineColor(kGray);
+            ln2->Draw();
+            TLine* ln3 = new TLine(xmin, 1.00, xmax, 1.00);
+            ln3->SetLineStyle(1);
+            ln3->SetLineColor(kBlack);
+            ln3->Draw();
+            TLine* ln4 = new TLine(xmin, 0.90, xmax, 0.90);
+            ln4->SetLineStyle(2);
+            ln4->SetLineColor(kGray+2);
+            ln4->Draw();
+            TLine* ln5 = new TLine(xmin, 1.1, xmax, 1.1);
+            ln5->SetLineStyle(2);
+            ln5->SetLineColor(kGray+2);
+            ln5->Draw();
+          }
+
+          // ---------- save ----------
+          const string tagfileSVD = R + "_" + C + Form("_ptlead%.0f", cut);
+          const string pdfPath_svd = string(outDir) + "/SVD_closure_" + tagfileSVD + ".pdf";
+       
         // create a directory for this (R, centrality, ptlead) inside fout
-        TDirectory* d = fout->mkdir(tagfile.c_str());
-        if (!d) d = fout->GetDirectory(tagfile.c_str());
-        d->cd();
+          TDirectory* d = fout->mkdir(tagfileSVD.c_str());
+          if (!d) d = fout->GetDirectory(tagfileSVD.c_str());
+          d->cd();
 
         // Store full-statistics response (for data)
         hRespFull->Write("hRespRecoVsTruth_full");
@@ -509,26 +894,28 @@ void unfold_embedding(const char* inputFile,
         hPrior    ->Write("hPrior");  // save the prior used
 
         // optionally save unfolded spectra for closure checks
-        for (int ib = 0; ib < kNBayesIters; ++ib) {
-          if (unfolded[ib]) {
-            unfolded[ib]->Write(
-              Form("Unfolded_iter%d", kBayesIters[ib])
+        for (int iSVD = 0; iSVD < nSVD; ++iSVD) {
+          if (unfoldedSVD[iSVD]) {
+            unfoldedSVD[iSVD]->Write(
+              Form("Unfolded_SVD_iter%d", kRegValues[iSVD])
             );
           }
         }
 
-        c->SaveAs(pdfPath.c_str());
-        {
-          string pngPath = pdfPath;
-          const size_t pos = pngPath.rfind(".pdf");
-          if (pos != string::npos) pngPath.replace(pos, 4, ".png");
-          c->SaveAs(pngPath.c_str());
-        }
+        // save closure plot as before
+        c->SaveAs(pdfPath_svd.c_str());
+          {
+            string pngPath_svd = pdfPath_svd;
+            const size_t pos = pngPath_svd.rfind(".pdf");
+            if (pos != string::npos) pngPath_svd.replace(pos, 4, ".png");
+            c->SaveAs(pngPath_svd.c_str());
+          }
 
-        // ---------- cleanup ----------
+
+          // ---------- cleanup ----------
         delete c;
-        delete hT_plot;
-        delete hM_truth;
+        delete hT_plot_svd;
+        delete hM_truth_svd;
         delete hRespTrain;
         delete hRespFull;
         delete hMeasTrain;
@@ -538,13 +925,12 @@ void unfold_embedding(const char* inputFile,
         delete hMeasFull;
         delete hTrueFull;
         delete hPrior;
-        delete leg;
-        for (size_t ib = 0; ib < unfolded.size(); ++ib) {
-          if (unfolded[ib]) delete unfolded[ib];
-        }
-        for (size_t ib = 0; ib < unfoldedTruth.size(); ++ib) {
-          if (unfoldedTruth[ib]) delete unfoldedTruth[ib];
-        }
+        delete leg_svd;
+        for (auto* u  : unfoldedSVD)      delete u;
+        for (auto* ut : unfoldedTruth) delete ut;
+
+       } //--- end of SVD unfolding ---
+
       } // ptlead cuts
     } // centralities
   } // radii

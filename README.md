@@ -1,5 +1,10 @@
 # Analysis of inclusive jets in Au+Au collisions at $\sqrt{s_{\textrm{NN}}} = 200$ GeV
 
+Analysis is now prepared to be run on new Alma9 machines (starsub0x). Local running needs to be done within container, jobs need to be executed outside of the container. Commands such as `cons` work only in the container. 
+
+To enter the container, use:
+`singularity exec -e -B /direct -B /star -B /afs -B /gpfs -B /sdcc/lustre02 /cvmfs/star.sdcc.bnl.gov/containers/rhic_sl7.sif csh`
+
 ## Tree production
 `data/` folder contains the jet algorithm and tree production.
 
@@ -9,7 +14,6 @@
 ```bash
 setup 64b
 ```
-- For now the code needs to be run on old rcas60XX machines, one exception is unfolding, which needs to be executed in starsub0X machines
 
 #### FastJet
 One does not have to use own `fastjet` installation. There already exists compiled version -> one may check it using
@@ -20,14 +24,23 @@ and see something like
 `/cvmfs/star.sdcc.bnl.gov/star-spack/spack/opt/spack/linux-rhel7-x86/gcc-4.8.5/fastjet-3.3.4-2ro35ixrxr4b5jn4dprn46h3t37n64od/lib` along the libraries.
 Another possibility is to install `fastjet` using `data/fastjet_install.sh` script, which will download and compile the `fastjet` library in users `gpfs` directory
 
+#### Local running
+- Needs to be done in the container
 
+`./runLocal.sh` runs both data and embedding 
+`./runLocal.sh embedding` runs only embedding 
+`./runLocal.sh data` runs only data 
 
-For local use - `data/runLocal.sh` to create a test tree
-And mass production - `data/run.sh` which accepts the list of input files as an argument.
+- These options produce a small testing tree inside `data/` (either for data or embedding or both)
+- In the folder `data/filelists` are lists for both local and global running
+- There are generated lists for 10 and 100 files (you can edit the choice in `runLocal.sh)
 
-`./run.sh` runs both data and embedding (same logic for Local running)
-`./run.sh embedding` runs only embedding (same logic for Local running)
-`./run.sh data` runs only data (same logic for Local running)
+#### Jobs
+- Needs to be executed outside of the container
+
+`./run.sh` runs both data and embedding 
+`./run.sh embedding` runs only embedding 
+`./run.sh data` runs only data 
 
 
 ### Main components
