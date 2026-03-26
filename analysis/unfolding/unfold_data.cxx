@@ -317,25 +317,25 @@ void unfold_data(const char* dataFile,
         hUnfoldedTruthBins_raw->SetDirectory(0);
 
         // -------- Matching efficiency correction (TRUTH binning, AFTER unfolding) --------
-        // TH1D* hMatchEffTruth = GetEffHistChecked(
-        //     fEff,
-        //     tagfile,
-        //     "h_match_eff_truth",
-        //     hUnfoldedTruthBins_raw,
-        //     Form("hMatchEffTruth_%s", tag.c_str()),
-        //     /*verbose=*/true);
+        TH1D* hMatchEffTruth = GetEffHistChecked(
+            fEff,
+            tagfile,
+            "h_match_eff_truth",
+            hUnfoldedTruthBins_raw,
+            Form("hMatchEffTruth_%s", tag.c_str()),
+            /*verbose=*/true);
 
-        // TH1D* hUnfoldedTruthBins_matchCorr = 0;
-        // if (hMatchEffTruth) {
-        //   hUnfoldedTruthBins_matchCorr = (TH1D*)hUnfoldedTruthBins_raw->Clone(
-        //       Form("hUnfoldedTruthBins_matchCorr_%s", tag.c_str()));
-        //   hUnfoldedTruthBins_matchCorr->SetDirectory(0);
+        TH1D* hUnfoldedTruthBins_matchCorr = 0;
+        if (hMatchEffTruth) {
+          hUnfoldedTruthBins_matchCorr = (TH1D*)hUnfoldedTruthBins_raw->Clone(
+              Form("hUnfoldedTruthBins_matchCorr_%s", tag.c_str()));
+          hUnfoldedTruthBins_matchCorr->SetDirectory(0);
 
-        //   ApplyDivideCorr(hUnfoldedTruthBins_matchCorr, hMatchEffTruth, /*verbose=*/true);
-        // }
+          ApplyDivideCorr(hUnfoldedTruthBins_matchCorr, hMatchEffTruth, /*verbose=*/true);
+        }
 
-        TH1D* hMatchEffTruth = 0;               // TEMP: match-eff disabled
-        TH1D* hUnfoldedTruthBins_matchCorr = 0; // keep null
+      //  TH1D* hMatchEffTruth = 0;               // TEMP: match-eff disabled
+      //  TH1D* hUnfoldedTruthBins_matchCorr = 0; // keep null
 
         // ---------------- save to output file ----------------
         TDirectory* dOut = fOutAll->mkdir(tagfile.c_str());

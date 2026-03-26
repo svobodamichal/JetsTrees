@@ -83,4 +83,4 @@ EOF
 tail -n +2 "${templateXml}" >>"${generatedXml}"
 
 # star-submit -u ie "${generatedXml}"
-star-submit-beta "${generatedXml}"
+star-submit-beta -u ie "${generatedXml}"

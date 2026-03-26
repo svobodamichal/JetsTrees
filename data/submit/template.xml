@@ -17,6 +17,7 @@
   <command>
     setup 64b
     starver &starVersion;
+    cons
     root4star -l -b -q StRoot/macros/&rootMacro;\(\"$FILELIST\",\"&filelist_name;_$JOBINDEX\",0,\"picoDst\",&isEmbedding;\)
   </command>
 

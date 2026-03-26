@@ -3,7 +3,7 @@
 Analysis is now prepared to be run on new Alma9 machines (starsub0x). Local running needs to be done within container, jobs need to be executed outside of the container. Commands such as `cons` work only in the container. 
 
 To enter the container, use:
-`singularity exec -e -B /direct -B /star -B /afs -B /gpfs -B /sdcc/lustre02 /cvmfs/star.sdcc.bnl.gov/containers/rhic_sl7.sif csh`
+singularity exec -e -B /direct -B /star -B /afs -B /gpfs -B /sdcc/lustre02 /cvmfs/star.sdcc.bnl.gov/containers/rhic_sl7.sif csh``
 
 ## Tree production
 `data/` folder contains the jet algorithm and tree production.

@@ -37,6 +37,25 @@ double areaMinForR(double R) {
   return CUT_AREA_04;
 }
 
+static const int kNPthatBins = 11;
+static const double kXsecWeights[kNPthatBins] = {
+  1.616e+0, 1.355e-01, 2.288e-02, 5.524e-03, 2.203e-03,
+  3.437e-04, 4.681e-05, 8.532e-06, 2.178e-06, 1.198e-07, 6.939e-09
+};
+
+static const double kMinSignif = std::sqrt(10.0);
+
+static int FindPtHatBin(double xsecW)
+{
+  const double relTol = 1e-6;
+  for (int i = 0; i < kNPthatBins; ++i) {
+    double ref = kXsecWeights[i];
+    double diff = std::fabs(xsecW - ref);
+    if (diff <= relTol * std::fabs(ref)) return i;
+  }
+  return -1;
+}
+
 void make_hists(const char *infile  = "embedding_merged.root",
                 const char *outfile = "hists.root")
 {
@@ -187,12 +206,36 @@ void make_hists(const char *infile  = "embedding_merged.root",
                              nbins_corr, xmin_corr, xmax_corr);
       }
 
+      TH2D* h2_recoCorr_vs_mc_pthat[kNPthatBins];
+      TH1D* hSpec_pthat[N_LEAD][kNPthatBins];
+
+      for (int ip = 0; ip < kNPthatBins; ++ip) {
+        h2_recoCorr_vs_mc_pthat[ip] =
+          new TH2D(Form("h2_recoPtCorr_vs_mcPt_pthat%d_%s_%s", ip, rname.c_str(), cname.c_str()),
+                  "Reco p_{T}^{corr} vs MC p_{T};p_{T}^{reco,corr} [GeV];p_{T}^{MC} [GeV]",
+                  120, -40, 60, 120, 0, 60);
+        h2_recoCorr_vs_mc_pthat[ip]->SetDirectory(0);
+
+        for (int it = 0; it < N_LEAD; ++it) {
+          hSpec_pthat[it][ip] =
+            new TH1D(Form("hSpec_recoPtCorr_ptlead%.0f_pthat%d_%s_%s",
+                          PTLEAD_THR[it], ip, rname.c_str(), cname.c_str()),
+                    Form("Reco p_{T}^{corr} spectrum (ptlead>=%.0f);p_{T}^{reco,corr} [GeV];centrality-weighted counts",
+                          PTLEAD_THR[it]),
+                    nbins_corr, xmin_corr, xmax_corr);
+          hSpec_pthat[it][ip]->SetDirectory(0);
+        }
+      }
+
       // ---------------- loop entries ----------------
       for (Long64_t i = 0; i < nentries; ++i) {
         tree->GetEntry(i);
 
         // base weights
-        double w = (double)xsecWeight * (double)centralityWeight;
+        const int ip = FindPtHatBin((double)xsecWeight);
+        if (ip < 0) continue;
+
+        double wCent = (double)centralityWeight;
 
         // matched condition (embedding matched tree entry)
         bool haveMC   = (mc_pt > 0.0f);
@@ -211,44 +254,84 @@ void make_hists(const char *infile  = "embedding_merged.root",
 
 
         // fill 2D for inclusive (ptlead>=0)
-        h2_recoCorr_vs_mc->Fill((double)reco_pt_corr, (double)mc_pt, w);
+        h2_recoCorr_vs_mc_pthat[ip]->Fill((double)reco_pt_corr, (double)mc_pt, wCent);
 
-        // fill spectra per ptlead threshold
         for (int it = 0; it < N_LEAD; ++it) {
           if (reco_pt_lead >= (Float_t)PTLEAD_THR[it]) {
-            hSpec[it]->Fill((double)reco_pt_corr, w);
+            hSpec_pthat[it][ip]->Fill((double)reco_pt_corr, wCent);
           }
         }
       }
+
+      h2_recoCorr_vs_mc->Reset();
+      for (int it = 0; it < N_LEAD; ++it) {
+        hSpec[it]->Reset();
+      }
+
+      for (int ip = 0; ip < kNPthatBins; ++ip) {
+        const double xw = kXsecWeights[ip];
+
+        for (int ix = 1; ix <= hSpec_pthat[0][ip]->GetNbinsX(); ++ix) {
+          // build mask from inclusive reco spectrum (ptlead >= 0)
+          const double binC = hSpec_pthat[0][ip]->GetBinContent(ix);
+          const double binE = hSpec_pthat[0][ip]->GetBinError(ix);
+          const double signif = (binE > 0.0 ? binC / binE : 0.0);
+          const bool keep = (signif > kMinSignif);
+
+          if (!keep) continue;
+
+          // ---- merge 1D spectra ----
+          for (int it = 0; it < N_LEAD; ++it) {
+            const double oldC = hSpec[it]->GetBinContent(ix);
+            const double oldE = hSpec[it]->GetBinError(ix);
+            const double addC = xw * hSpec_pthat[it][ip]->GetBinContent(ix);
+            const double addE = xw * hSpec_pthat[it][ip]->GetBinError(ix);
+
+            hSpec[it]->SetBinContent(ix, oldC + addC);
+            hSpec[it]->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
+          }
+
+          // ---- merge 2D histogram using same reco-bin mask ----
+          for (int iy = 1; iy <= h2_recoCorr_vs_mc_pthat[ip]->GetNbinsY(); ++iy) {
+            const double oldC = h2_recoCorr_vs_mc->GetBinContent(ix, iy);
+            const double oldE = h2_recoCorr_vs_mc->GetBinError(ix, iy);
+            const double addC = xw * h2_recoCorr_vs_mc_pthat[ip]->GetBinContent(ix, iy);
+            const double addE = xw * h2_recoCorr_vs_mc_pthat[ip]->GetBinError(ix, iy);
+
+            h2_recoCorr_vs_mc->SetBinContent(ix, iy, oldC + addC);
+            h2_recoCorr_vs_mc->SetBinError(ix, iy, std::sqrt(oldE*oldE + addE*addE));
+          }
+        }
+      }
+
 
       // ---------------- write hists ----------------
       outC->cd();
       h2_recoCorr_vs_mc->Write();
       for (int it = 0; it < N_LEAD; ++it) hSpec[it]->Write();
 
-    double Rval = 0.0;
-    sscanf(rname.c_str(), "R%lf", &Rval);
+      double Rval = 0.0;
+      sscanf(rname.c_str(), "R%lf", &Rval);
 
-    TString centLabel = cname.c_str();
-    centLabel.ReplaceAll("CENT_", "");
-    centLabel.ReplaceAll("MID_",  "");
-    centLabel.ReplaceAll("PERI_", "");
-    centLabel.ReplaceAll("_", "-");
-    centLabel += " %";
+      TString centLabel = cname.c_str();
+      centLabel.ReplaceAll("CENT_", "");
+      centLabel.ReplaceAll("MID_",  "");
+      centLabel.ReplaceAll("PERI_", "");
+      centLabel.ReplaceAll("_", "-");
+      centLabel += " %";
 
       // ---------------- make PDF: overlay of all ptlead ----------------
+      
       {
-        TCanvas* c = new TCanvas("cSpec","cSpec",800,700);
-        c->SetLogy();
+        TCanvas* cSpec = new TCanvas("cSpec","cSpec",800,700);
+        cSpec->SetLogy();
 
-        // draw in a stable order
         hSpec[0]->SetTitle("");
         hSpec[0]->GetXaxis()->SetTitle("#it{p}_{T, reco}^{corr} (GeV/#it{c})");
         hSpec[0]->GetYaxis()->SetTitle("Weighted counts");
         hSpec[0]->GetXaxis()->SetRangeUser(-10, 60);
         hSpec[0]->Draw("E1");
 
-        // basic styling (optional but readable)
         hSpec[0]->SetMarkerStyle(20);
         hSpec[0]->SetLineColor(kBlack);
         hSpec[0]->SetMarkerColor(kBlack);
@@ -290,18 +373,24 @@ void make_hists(const char *infile  = "embedding_merged.root",
 
         TString pdfName;
         pdfName.Form("%s/spectra_ptlead_embed_%s_%s.pdf", pdfCDir.Data(), rname.c_str(), cname.c_str());
-        c->SaveAs(pdfName.Data());
+        cSpec->SaveAs(pdfName.Data());
         TString pngName = pdfName;
         pngName.ReplaceAll(".pdf", ".png");
-        c->SaveAs(pngName.Data());
+        cSpec->SaveAs(pngName.Data());
 
         delete leg;
-        delete c;
+        delete cSpec;
       }
 
-      // cleanup (ROOT won’t always do it nicely for you)
       delete h2_recoCorr_vs_mc;
       for (int it = 0; it < N_LEAD; ++it) delete hSpec[it];
+
+      for (int ip = 0; ip < kNPthatBins; ++ip) {
+        delete h2_recoCorr_vs_mc_pthat[ip];
+        for (int it = 0; it < N_LEAD; ++it) {
+          delete hSpec_pthat[it][ip];
+        }
+      }
     }
   }
 

@@ -46,6 +46,25 @@ static const double bin_truth_edges[nbins_truth+1] = {
   0,5,10,15,20,25,30,35,40,50,60
 };
 
+static const int kNPthatBins = 11;
+static const double kXsecWeights[kNPthatBins] = {
+  1.616e+0, 1.355e-01, 2.288e-02, 5.524e-03, 2.203e-03,
+  3.437e-04, 4.681e-05, 8.532e-06, 2.178e-06, 1.198e-07, 6.939e-09
+};
+
+static const double kMinSignif = std::sqrt(10.0);
+
+static int FindPtHatBin(double xsecW)
+{
+    const double relTol = 1e-6;
+    for (int i = 0; i < kNPthatBins; ++i) {
+        double ref = kXsecWeights[i];
+        double diff = std::fabs(xsecW - ref);
+        if (diff <= relTol * std::fabs(ref)) return i;
+    }
+    return -1;
+}
+
 void make_efficiencies(const char *infile  = "embedding_merged.root",
                        const char *outfile = "efficiencies.root")
 {
@@ -190,6 +209,11 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
             TH1D *h_pur_num  [N_LEAD_THR];
             TH1D *h_pur_eff  [N_LEAD_THR];
 
+            TH1D* h_trig_den_pthat[N_LEAD_THR][kNPthatBins];
+            TH1D* h_trig_num_pthat[N_LEAD_THR][kNPthatBins];
+            TH1D* h_pur_den_pthat [N_LEAD_THR][kNPthatBins];
+            TH1D* h_pur_num_pthat [N_LEAD_THR][kNPthatBins];
+
             TDirectory* outTag[N_LEAD_THR] = {0};
 
             // --- Book histograms for each pT_lead threshold ---
@@ -232,14 +256,44 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 h_pur_eff[it] = (TH1D*)h_pur_num[it]->Clone("h_pur_eff");
                 h_pur_eff[it]->SetTitle("");
 
+                // Per-pThat trigger/purity histograms (centrality-weight only)
+                for (int ip = 0; ip < kNPthatBins; ++ip) {
+                    h_trig_den_pthat[it][ip] = new TH1D(
+                        Form("h_trig_den_pthat%d", ip),
+                        Form("Reco jets denominator, pThat bin %d", ip),
+                        nbins_reco, xmin_reco, xmax_reco);
+                    h_trig_den_pthat[it][ip]->SetDirectory(0);
+
+                    h_trig_num_pthat[it][ip] = new TH1D(
+                        Form("h_trig_num_pthat%d", ip),
+                        Form("Triggered reco jets numerator, pThat bin %d", ip),
+                        nbins_reco, xmin_reco, xmax_reco);
+                    h_trig_num_pthat[it][ip]->SetDirectory(0);
+
+                    h_pur_den_pthat[it][ip] = new TH1D(
+                        Form("h_pur_den_pthat%d", ip),
+                        Form("Reco jets purity denominator, pThat bin %d", ip),
+                        nbins_reco, xmin_reco, xmax_reco);
+                    h_pur_den_pthat[it][ip]->SetDirectory(0);
+
+                    h_pur_num_pthat[it][ip] = new TH1D(
+                        Form("h_pur_num_pthat%d", ip),
+                        Form("Matched reco jets purity numerator, pThat bin %d", ip),
+                        nbins_reco, xmin_reco, xmax_reco);
+                    h_pur_num_pthat[it][ip]->SetDirectory(0);
+                }
+
             }
 
             // --- Loop over tree entries and fill histos ---
             for (Long64_t i = 0; i < nentries; ++i) {
                 tree->GetEntry(i);
 
-                // event weight
-                double w = (double) xsecWeight * (double) centralityWeight;
+                const int ip = FindPtHatBin((double)xsecWeight);
+                if (ip < 0) continue;
+
+                double w = (double)xsecWeight * (double)centralityWeight;
+                double wCent = (double)centralityWeight;
 
                 // Reco quality cuts
                 bool haveReco = (reco_pt > -500.0);
@@ -276,24 +330,93 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
 
                     // ---------------- Trigger efficiency & purity (reco-based) -----
                     if (haveReco && passRecoCuts && reco_pt_lead >= thr) {
-                        // Trigger eff: triggered vs all reco jets
-                        h_trig_den[it]->Fill(reco_pt_corr, w);
+                        // Trigger efficiency: fill per-pThat with centrality weight only
+                        h_trig_den_pthat[it][ip]->Fill(reco_pt_corr, wCent);
                         if (reco_trigger_match) {
-                            h_trig_num[it]->Fill(reco_pt_corr, w);
+                            h_trig_num_pthat[it][ip]->Fill(reco_pt_corr, wCent);
                         }
 
-                        // Purity: matched vs all reco jets
+                        // Purity: fill per-pThat with centrality weight only
                         bool isMatchedReco = haveMC &&
                                              (deltaR > 0.0) &&
                                              (deltaR < dRmax);
-                        h_pur_den[it]->Fill(reco_pt_corr, w);
+
+                        h_pur_den_pthat[it][ip]->Fill(reco_pt_corr, wCent);
                         if (isMatchedReco) {
-                            h_pur_num[it]->Fill(reco_pt_corr, w);
+                            h_pur_num_pthat[it][ip]->Fill(reco_pt_corr, wCent);
                         }
                     }
 
                 } // end loop over thresholds
             } // end loop over entries
+
+
+            // ------------------------------------------------------------
+            // Merge trigger/purity from per-pThat histograms with reco-bin mask
+            // ------------------------------------------------------------
+            for (int it = 0; it < N_LEAD_THR; ++it) {
+                h_trig_den[it]->Reset();
+                h_trig_num[it]->Reset();
+                h_pur_den[it]->Reset();
+                h_pur_num[it]->Reset();
+
+                for (int ip = 0; ip < kNPthatBins; ++ip) {
+                    const double xw = kXsecWeights[ip];
+
+                    for (int ix = 1; ix <= nbins_reco; ++ix) {
+                        const double c = h_trig_den_pthat[it][ip]->GetBinContent(ix);
+                        const double e = h_trig_den_pthat[it][ip]->GetBinError(ix);
+                        const double signif = (e > 0.0 ? c / e : 0.0);
+                        const bool keep = (signif > kMinSignif);
+
+                        if (!keep) continue;
+
+                        // trigger denominator
+                        {
+                            const double oldC = h_trig_den[it]->GetBinContent(ix);
+                            const double oldE = h_trig_den[it]->GetBinError(ix);
+                            const double addC = xw * h_trig_den_pthat[it][ip]->GetBinContent(ix);
+                            const double addE = xw * h_trig_den_pthat[it][ip]->GetBinError(ix);
+
+                            h_trig_den[it]->SetBinContent(ix, oldC + addC);
+                            h_trig_den[it]->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
+                        }
+
+                        // trigger numerator
+                        {
+                            const double oldC = h_trig_num[it]->GetBinContent(ix);
+                            const double oldE = h_trig_num[it]->GetBinError(ix);
+                            const double addC = xw * h_trig_num_pthat[it][ip]->GetBinContent(ix);
+                            const double addE = xw * h_trig_num_pthat[it][ip]->GetBinError(ix);
+
+                            h_trig_num[it]->SetBinContent(ix, oldC + addC);
+                            h_trig_num[it]->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
+                        }
+
+                        // purity denominator
+                        {
+                            const double oldC = h_pur_den[it]->GetBinContent(ix);
+                            const double oldE = h_pur_den[it]->GetBinError(ix);
+                            const double addC = xw * h_pur_den_pthat[it][ip]->GetBinContent(ix);
+                            const double addE = xw * h_pur_den_pthat[it][ip]->GetBinError(ix);
+
+                            h_pur_den[it]->SetBinContent(ix, oldC + addC);
+                            h_pur_den[it]->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
+                        }
+
+                        // purity numerator
+                        {
+                            const double oldC = h_pur_num[it]->GetBinContent(ix);
+                            const double oldE = h_pur_num[it]->GetBinError(ix);
+                            const double addC = xw * h_pur_num_pthat[it][ip]->GetBinContent(ix);
+                            const double addE = xw * h_pur_num_pthat[it][ip]->GetBinError(ix);
+
+                            h_pur_num[it]->SetBinContent(ix, oldC + addC);
+                            h_pur_num[it]->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
+                        }
+                    }
+                }
+            }
 
             // --- Build efficiency histograms with binomial errors ---
             for (int it = 0; it < N_LEAD_THR; ++it) {
@@ -315,11 +438,11 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
 
                 h_trig_eff[it]->Divide(h_trig_num[it],
                                     h_trig_den[it],
-                                    1.0, 1.0, "b");
+                                    1.0, 1.0);
 
                 h_pur_eff[it]->Divide(h_pur_num[it],
                                     h_pur_den[it],
-                                    1.0, 1.0, "b");
+                                    1.0, 1.0);
 
                 // -----------------------------------------------------------
                 // 2) REBIN numerator & denominator, then compute efficiency
@@ -373,7 +496,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 TH1D *h_trig_eff_reco = (TH1D*)h_trig_num_reco->Clone("h_trig_eff_reco");
                 h_trig_eff_reco->SetDirectory(0);
                 h_trig_eff_reco->SetTitle("");
-                h_trig_eff_reco->Divide(h_trig_num_reco, h_trig_den_reco, 1.0, 1.0, "b");
+                h_trig_eff_reco->Divide(h_trig_num_reco, h_trig_den_reco, 1.0, 1.0);
 
                 // write single copy
                 outTag[it]->cd();
@@ -411,7 +534,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 TH1D *h_pur_eff_reco = (TH1D*)h_pur_num_reco->Clone("h_pur_eff_reco");
                 h_pur_eff_reco->SetDirectory(0);
                 h_pur_eff_reco->SetTitle("");
-                h_pur_eff_reco->Divide(h_pur_num_reco, h_pur_den_reco, 1.0, 1.0, "b");
+                h_pur_eff_reco->Divide(h_pur_num_reco, h_pur_den_reco, 1.0, 1.0);
 
                 // write single copy
                 outTag[it]->cd();
@@ -436,6 +559,27 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 cPur->SaveAs(Form("QA_plots/QA_purity_%s.pdf", tagDirName.Data()));
                 cPur->SaveAs(Form("QA_plots/QA_purity_%s.png", tagDirName.Data()));
                 delete cPur;
+            }
+            for (int it = 0; it < N_LEAD_THR; ++it) {
+                for (int ip = 0; ip < kNPthatBins; ++ip) {
+                    delete h_trig_den_pthat[it][ip];
+                    delete h_trig_num_pthat[it][ip];
+                    delete h_pur_den_pthat[it][ip];
+                    delete h_pur_num_pthat[it][ip];
+                }
+            }
+            for (int it = 0; it < N_LEAD_THR; ++it) {
+                delete h_match_mc_den[it];
+                delete h_match_mc_num[it];
+                delete h_match_mc_eff[it];
+
+                delete h_trig_den[it];
+                delete h_trig_num[it];
+                delete h_trig_eff[it];
+
+                delete h_pur_den[it];
+                delete h_pur_num[it];
+                delete h_pur_eff[it];
             }
         } // end loop over centrality dirs
     } // end loop over R dirs
