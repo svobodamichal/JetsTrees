@@ -35,13 +35,11 @@ static const double NcollErr[9] = {
 };
 
 // TEMPORARY: equal-weight average to approximate 0-10 and 60-80
-static const double Ncoll_0_10  = 0.5*(Ncoll[0] + Ncoll[1]);
-static const double NcollErr_0_10 =
-  0.5*std::sqrt(NcollErr[0]*NcollErr[0] + NcollErr[1]*NcollErr[1]);
+static const double Ncoll_0_10  = 952.0;
+static const double NcollErr_0_10 = 28.0;
 
-static const double Ncoll_60_80 = 0.5*(Ncoll[7] + Ncoll[8]);
-static const double NcollErr_60_80 =
-  0.5*std::sqrt(NcollErr[7]*NcollErr[7] + NcollErr[8]*NcollErr[8]);
+static const double Ncoll_60_80 = 21.0;
+static const double NcollErr_60_80 = 9.0;
 
 static const vector<string> kRadii = {"R0.2", "R0.3", "R0.4"};
 static const double kPtLeadCuts[] = {0.0, 5.0, 7.0, 9.0};
@@ -162,8 +160,8 @@ static void SaveQuickPdf(const TH1D* h, const char* pdf,
   TLatex* lat = new TLatex();
   lat->SetNDC();
   lat->SetTextSize(0.035);
-  lat->DrawLatex(0.15, 0.85, Form("N_{coll}^{cent} = %.3f", ncollC));
-  lat->DrawLatex(0.15, 0.80, Form("N_{coll}^{peri} = %.3f", ncollP));
+  lat->DrawLatex(0.15, 0.85, Form("N_{coll}^{cent} = %.3f +/- %.3f", ncollC, NcollErr_0_10));
+  lat->DrawLatex(0.15, 0.80, Form("N_{coll}^{peri} = %.3f +/- %.3f", ncollP, NcollErr_60_80 ));
 
   lat->SetTextAlign(33); // right-top
   lat->DrawLatex(0.92, 0.90, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");

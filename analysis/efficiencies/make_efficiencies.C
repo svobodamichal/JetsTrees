@@ -187,15 +187,6 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
             tree->SetBranchAddress("xsecWeight",       &xsecWeight);
             tree->SetBranchAddress("centralityWeight", &centralityWeight);
 
-            // binning
-            const Int_t    nbins_mc  = 600;
-            const Double_t xmin_mc   = 0.0;
-            const Double_t xmax_mc   = 60.0;
-
-            const Int_t    nbins_reco = 1000;
-            const Double_t xmin_reco  = -40.0;
-            const Double_t xmax_reco  =  60.0;
-
             // Arrays per pT_lead threshold
             TH1D *h_match_mc_den [N_LEAD_THR];
             TH1D *h_match_mc_num [N_LEAD_THR];
@@ -234,25 +225,25 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 // Histogram base names can now be simple, they live in separate dirs
                 // Matching efficiency vs mc_pt
                 h_match_mc_den[it] = new TH1D("h_match_mc_den", "MC jets (denominator)",
-                                            nbins_mc, xmin_mc, xmax_mc);
+                                            nbins_truth, bin_truth_edges);
                 h_match_mc_num[it] = new TH1D("h_match_mc_num", "Matched MC jets (numerator)",
-                                            nbins_mc, xmin_mc, xmax_mc);
+                                            nbins_truth, bin_truth_edges);
                 h_match_mc_eff[it] = (TH1D*)h_match_mc_num[it]->Clone("h_match_mc_eff");
                 h_match_mc_eff[it]->SetTitle("");
 
                 // Trigger efficiency vs reco_pt_corr
                 h_trig_den[it] = new TH1D("h_trig_den", "Reco jets (denominator)",
-                                        nbins_reco, xmin_reco, xmax_reco);
+                                        nbins_meas, bin_meas_edges);
                 h_trig_num[it] = new TH1D("h_trig_num", "Triggered reco jets (numerator)",
-                                        nbins_reco, xmin_reco, xmax_reco);
+                                        nbins_meas, bin_meas_edges);
                 h_trig_eff[it] = (TH1D*)h_trig_num[it]->Clone("h_trig_eff");
                 h_trig_eff[it]->SetTitle("");
 
                 // Purity vs reco_pt_corr
                 h_pur_den[it] = new TH1D("h_pur_den", "All reco jets (denominator)",
-                                        nbins_reco, xmin_reco, xmax_reco);
+                                        nbins_meas, bin_meas_edges);
                 h_pur_num[it] = new TH1D("h_pur_num", "Matched reco jets (numerator)",
-                                        nbins_reco, xmin_reco, xmax_reco);
+                                        nbins_meas, bin_meas_edges);
                 h_pur_eff[it] = (TH1D*)h_pur_num[it]->Clone("h_pur_eff");
                 h_pur_eff[it]->SetTitle("");
 
@@ -261,25 +252,25 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                     h_trig_den_pthat[it][ip] = new TH1D(
                         Form("h_trig_den_pthat%d", ip),
                         Form("Reco jets denominator, pThat bin %d", ip),
-                        nbins_reco, xmin_reco, xmax_reco);
+                        nbins_meas, bin_meas_edges);
                     h_trig_den_pthat[it][ip]->SetDirectory(0);
 
                     h_trig_num_pthat[it][ip] = new TH1D(
                         Form("h_trig_num_pthat%d", ip),
                         Form("Triggered reco jets numerator, pThat bin %d", ip),
-                        nbins_reco, xmin_reco, xmax_reco);
+                        nbins_meas, bin_meas_edges);
                     h_trig_num_pthat[it][ip]->SetDirectory(0);
 
                     h_pur_den_pthat[it][ip] = new TH1D(
                         Form("h_pur_den_pthat%d", ip),
                         Form("Reco jets purity denominator, pThat bin %d", ip),
-                        nbins_reco, xmin_reco, xmax_reco);
+                        nbins_meas, bin_meas_edges);
                     h_pur_den_pthat[it][ip]->SetDirectory(0);
 
                     h_pur_num_pthat[it][ip] = new TH1D(
                         Form("h_pur_num_pthat%d", ip),
                         Form("Matched reco jets purity numerator, pThat bin %d", ip),
-                        nbins_reco, xmin_reco, xmax_reco);
+                        nbins_meas, bin_meas_edges);
                     h_pur_num_pthat[it][ip]->SetDirectory(0);
                 }
 
@@ -311,7 +302,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                     double thr = PTLEAD_THR[it];
 
                     // ---------------- Matching efficiency (MC-based) ----------------
-                    // Denominator: all MC jets with mc_pt_lead >= thr
+                    // Denominator: all MC jets
                     if (haveMC) {
                         h_match_mc_den[it]->Fill(mc_pt, w);
 
@@ -363,7 +354,7 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 for (int ip = 0; ip < kNPthatBins; ++ip) {
                     const double xw = kXsecWeights[ip];
 
-                    for (int ix = 1; ix <= nbins_reco; ++ix) {
+                    for (int ix = 1; ix <= nbins_meas; ++ix) {
                         const double c = h_trig_den_pthat[it][ip]->GetBinContent(ix);
                         const double e = h_trig_den_pthat[it][ip]->GetBinError(ix);
                         const double signif = (e > 0.0 ? c / e : 0.0);
@@ -449,12 +440,10 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 // -----------------------------------------------------------
 
                 // --- Matching efficiency in TRUTH binning ---
-                TH1D *h_match_den_truth = (TH1D*)h_match_mc_den[it]->Rebin(
-                    nbins_truth, "h_match_den_truth", bin_truth_edges);
+                TH1D *h_match_den_truth = (TH1D*)h_match_mc_den[it]->Clone("h_match_den_truth");
                 h_match_den_truth->SetDirectory(0);
 
-                TH1D *h_match_num_truth = (TH1D*)h_match_mc_num[it]->Rebin(
-                    nbins_truth, "h_match_num_truth", bin_truth_edges);
+                TH1D *h_match_num_truth = (TH1D*)h_match_mc_num[it]->Clone("h_match_num_truth");
                 h_match_num_truth->SetDirectory(0);
 
                 TH1D *h_match_eff_truth = (TH1D*)h_match_num_truth->Clone("h_match_eff_truth");
@@ -485,12 +474,10 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 delete cMatch;
 
                 // --- Trigger efficiency in MEASURED binning ---
-                TH1D *h_trig_den_reco = (TH1D*)h_trig_den[it]->Rebin(
-                    nbins_meas, "h_trig_den_reco", bin_meas_edges);
+                TH1D *h_trig_den_reco = (TH1D*)h_trig_den[it]->Clone("h_trig_den_reco");
                 h_trig_den_reco->SetDirectory(0);
 
-                TH1D *h_trig_num_reco = (TH1D*)h_trig_num[it]->Rebin(
-                    nbins_meas, "h_trig_num_reco", bin_meas_edges);
+                TH1D *h_trig_num_reco = (TH1D*)h_trig_num[it]->Clone("h_trig_num_reco");
                 h_trig_num_reco->SetDirectory(0);
 
                 TH1D *h_trig_eff_reco = (TH1D*)h_trig_num_reco->Clone("h_trig_eff_reco");
@@ -523,12 +510,10 @@ void make_efficiencies(const char *infile  = "embedding_merged.root",
                 delete cTrig;
 
                 // --- Purity in MEASURED binning ---
-                TH1D *h_pur_den_reco = (TH1D*)h_pur_den[it]->Rebin(
-                    nbins_meas, "h_pur_den_reco", bin_meas_edges);
+                TH1D *h_pur_den_reco  = (TH1D*)h_pur_den[it]->Clone("h_pur_den_reco");
                 h_pur_den_reco->SetDirectory(0);
 
-                TH1D *h_pur_num_reco = (TH1D*)h_pur_num[it]->Rebin(
-                    nbins_meas, "h_pur_num_reco", bin_meas_edges);
+                TH1D *h_pur_num_reco  = (TH1D*)h_pur_num[it]->Clone("h_pur_num_reco");
                 h_pur_num_reco->SetDirectory(0);
 
                 TH1D *h_pur_eff_reco = (TH1D*)h_pur_num_reco->Clone("h_pur_eff_reco");

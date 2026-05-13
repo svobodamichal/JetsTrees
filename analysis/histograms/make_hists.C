@@ -15,7 +15,7 @@
 
 #include <iostream>
 #include <string>
-#include <math.h>
+#include <cmath>
 
 // =========================================================
 //  Jet-quality cuts (must match maker!)
@@ -44,6 +44,18 @@ static const double kXsecWeights[kNPthatBins] = {
 };
 
 static const double kMinSignif = std::sqrt(10.0);
+
+// measured & truth binning used in unfolding
+static const int nbins_meas = 24;
+static const double bin_meas_edges[nbins_meas+1] = {
+  -100,-80,-60,-40,-20,-10,-5,-2.5,0,2.5,5,7.5,10,12.5,15,17.5,
+  20,22.5,25,27.5,30,35,40,50,60
+};
+
+static const int nbins_truth = 10;
+static const double bin_truth_edges[nbins_truth+1] = {
+  0,5,10,15,20,25,30,35,40,50,60
+};
 
 static int FindPtHatBin(double xsecW)
 {
@@ -183,27 +195,28 @@ void make_hists(const char *infile  = "embedding_merged.root",
       tree->SetBranchAddress("reco_trigger_match",&reco_trigger_match);
 
       // ---------------- histogram booking ----------------
-      const int nbins_corr = 160;
+      const int nbins_corr = 100;
       const double xmin_corr = -40.0;
       const double xmax_corr =  60.0;
 
-      const int nbins_pt = 120;
+      const int nbins_pt = 60;
       const double xmin_pt = 0.0;
       const double xmax_pt = 60.0;
 
       // 2D: reco_pt_corr vs mc_pt (for the selected sample; inclusive ptlead>=0)
-      TH2D* h2_recoCorr_vs_mc =
-        new TH2D(Form("h2_recoPtCorr_vs_mcPt_%s_%s", rname.c_str(), cname.c_str()),
-                 "Reco p_{T}^{corr} vs MC p_{T};p_{T}^{reco,corr} [GeV];p_{T}^{MC} [GeV]",
-                 120, -40, 60, 120, 0, 60);
+    TH2D* h2_recoCorr_vs_mc =
+  new TH2D(Form("h2_recoPtCorr_vs_mcPt_%s_%s", rname.c_str(), cname.c_str()),
+           "Reco p_{T}^{corr} vs MC p_{T};p_{T}^{reco,corr} [GeV];p_{T}^{MC} [GeV]",
+           nbins_meas, bin_meas_edges,
+           nbins_truth, bin_truth_edges);
 
       // spectra per ptlead threshold (reco_pt_corr)
       TH1D* hSpec[N_LEAD];
       for (int it = 0; it < N_LEAD; ++it) {
         hSpec[it] = new TH1D(Form("hSpec_recoPtCorr_ptlead%.0f_%s_%s", PTLEAD_THR[it], rname.c_str(), cname.c_str()),
-                             Form("Reco p_{T}^{corr} spectrum (ptlead>=%.0f);p_{T}^{reco,corr} [GeV];weighted counts",
+                            Form("Reco p_{T}^{corr} spectrum (ptlead>=%.0f);p_{T}^{reco,corr} [GeV];weighted counts",
                                   PTLEAD_THR[it]),
-                             nbins_corr, xmin_corr, xmax_corr);
+                            nbins_meas, bin_meas_edges);
       }
 
       TH2D* h2_recoCorr_vs_mc_pthat[kNPthatBins];
@@ -213,8 +226,8 @@ void make_hists(const char *infile  = "embedding_merged.root",
         h2_recoCorr_vs_mc_pthat[ip] =
           new TH2D(Form("h2_recoPtCorr_vs_mcPt_pthat%d_%s_%s", ip, rname.c_str(), cname.c_str()),
                   "Reco p_{T}^{corr} vs MC p_{T};p_{T}^{reco,corr} [GeV];p_{T}^{MC} [GeV]",
-                  120, -40, 60, 120, 0, 60);
-        h2_recoCorr_vs_mc_pthat[ip]->SetDirectory(0);
+                  nbins_meas, bin_meas_edges,
+                  nbins_truth, bin_truth_edges);
 
         for (int it = 0; it < N_LEAD; ++it) {
           hSpec_pthat[it][ip] =
@@ -222,8 +235,7 @@ void make_hists(const char *infile  = "embedding_merged.root",
                           PTLEAD_THR[it], ip, rname.c_str(), cname.c_str()),
                     Form("Reco p_{T}^{corr} spectrum (ptlead>=%.0f);p_{T}^{reco,corr} [GeV];centrality-weighted counts",
                           PTLEAD_THR[it]),
-                    nbins_corr, xmin_corr, xmax_corr);
-          hSpec_pthat[it][ip]->SetDirectory(0);
+                    nbins_meas, bin_meas_edges);
         }
       }
 
@@ -271,7 +283,7 @@ void make_hists(const char *infile  = "embedding_merged.root",
       for (int ip = 0; ip < kNPthatBins; ++ip) {
         const double xw = kXsecWeights[ip];
 
-        for (int ix = 1; ix <= hSpec_pthat[0][ip]->GetNbinsX(); ++ix) {
+        for (int ix = 1; ix <= nbins_meas; ++ix) {
           // build mask from inclusive reco spectrum (ptlead >= 0)
           const double binC = hSpec_pthat[0][ip]->GetBinContent(ix);
           const double binE = hSpec_pthat[0][ip]->GetBinError(ix);
@@ -292,7 +304,7 @@ void make_hists(const char *infile  = "embedding_merged.root",
           }
 
           // ---- merge 2D histogram using same reco-bin mask ----
-          for (int iy = 1; iy <= h2_recoCorr_vs_mc_pthat[ip]->GetNbinsY(); ++iy) {
+          for (int iy = 1; iy <= nbins_truth; ++iy) {
             const double oldC = h2_recoCorr_vs_mc->GetBinContent(ix, iy);
             const double oldE = h2_recoCorr_vs_mc->GetBinError(ix, iy);
             const double addC = xw * h2_recoCorr_vs_mc_pthat[ip]->GetBinContent(ix, iy);
@@ -368,7 +380,7 @@ void make_hists(const char *infile  = "embedding_merged.root",
         tex.SetTextSize(0.045);
 
         tex.DrawLatex(0.32, 0.25, line1.Data());
-        tex.DrawLatex(0.32, 0.19, "Au+Au  #sqrt{s_{NN}} = 200 GeV");
+        tex.DrawLatex(0.32, 0.19, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
         tex.DrawLatex(0.32, 0.13, "THIS THESIS");
 
         TString pdfName;

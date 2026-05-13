@@ -311,6 +311,8 @@ void unfold_embedding(const char* inputFile,
         TH1D* hTrueTest_ptHat[kNPthatBins];
         TH1D* hMeasTest_ptHat[kNPthatBins];
 
+        TH2D* hRespTest_ptHat[kNPthatBins];
+
         TH1D* hPrior_ptHat[kNPthatBins];
 
         TH1D* hTruthMask_ptHat[kNPthatBins];
@@ -365,6 +367,12 @@ void unfold_embedding(const char* inputFile,
               ";mc p_{T} [GeV];content/error",
               nbins_truth, bin_truth_edges);
 
+          hRespTest_ptHat[ip] = new TH2D(("hRespTest" + s).Data(),
+            ";p_{T}^{reco,corr};p_{T}^{mc}",
+            nbins_meas, bin_meas_edges,
+            nbins_truth, bin_truth_edges);
+
+
           hTrueFull_ptHat[ip]->SetDirectory(0);
           hMeasFull_ptHat[ip]->SetDirectory(0);
           hRespFull_ptHat[ip]->SetDirectory(0);
@@ -376,6 +384,7 @@ void unfold_embedding(const char* inputFile,
           hPrior_ptHat[ip]->SetDirectory(0);
           hTruthMask_ptHat[ip]->SetDirectory(0);
           hTruthSignif_ptHat[ip]->SetDirectory(0);
+          hRespTest_ptHat[ip]->SetDirectory(0);
         }
 
 
@@ -423,10 +432,11 @@ void unfold_embedding(const char* inputFile,
             hRespTrain_ptHat[ip]->Fill(reco_pt_corr, mc_pt, wCent);
             hMeasTrain_ptHat[ip]->Fill(reco_pt_corr, wCent);
             hTrueTrain_ptHat[ip]->Fill(mc_pt,        wCent);
-          } else {
-            hMeasTest_ptHat[ip]->Fill(reco_pt_corr, wCent);
-            hTrueTest_ptHat[ip]->Fill(mc_pt,        wCent);
-          }
+            } else {
+              hRespTest_ptHat[ip]->Fill(reco_pt_corr, mc_pt, wCent);
+              hMeasTest_ptHat[ip]->Fill(reco_pt_corr, wCent);
+              hTrueTest_ptHat[ip]->Fill(mc_pt,        wCent);
+            }
         }
         cout << endl;
 
@@ -473,6 +483,7 @@ void unfold_embedding(const char* inputFile,
 
         // ---- prior ----
         for (int jb = 1; jb <= nbins_truth; ++jb) {
+          if (!validTruthBin[ip][jb]) continue;
           const double oldC = hPrior->GetBinContent(jb);
           const double oldE = hPrior->GetBinError(jb);
           const double addC = xw * hPrior_ptHat[ip]->GetBinContent(jb);
@@ -538,35 +549,59 @@ void unfold_embedding(const char* inputFile,
           }
         }
 
-        // ---- measured full/train/test ----
-        // simplest consistent-enough first version:
-        // use the 1D measured per-pThat as filled
+        // ---- measured full/train/test from accepted truth columns only ----
         for (int ix = 1; ix <= nbins_meas; ++ix) {
+
+          double addFullC = 0.0;
+          double addFullE2 = 0.0;
+
+          double addTrainC = 0.0;
+          double addTrainE2 = 0.0;
+
+          double addTestC = 0.0;
+          double addTestE2 = 0.0;
+
+          for (int jy = 1; jy <= nbins_truth; ++jy) {
+            if (!validTruthBin[ip][jy]) continue;
+
+            const double cFull = xw * hRespFull_ptHat[ip]->GetBinContent(ix, jy);
+            const double eFull = xw * hRespFull_ptHat[ip]->GetBinError(ix, jy);
+
+            addFullC  += cFull;
+            addFullE2 += eFull * eFull;
+
+            const double cTrain = xw * hRespTrain_ptHat[ip]->GetBinContent(ix, jy);
+            const double eTrain = xw * hRespTrain_ptHat[ip]->GetBinError(ix, jy);
+
+            addTrainC  += cTrain;
+            addTrainE2 += eTrain * eTrain;
+
+            const double cTest = xw * hRespTest_ptHat[ip]->GetBinContent(ix, jy);
+            const double eTest = xw * hRespTest_ptHat[ip]->GetBinError(ix, jy);
+
+            addTestC  += cTest;
+            addTestE2 += eTest * eTest;
+          }
+
           {
             const double oldC = hMeasFull->GetBinContent(ix);
             const double oldE = hMeasFull->GetBinError(ix);
-            const double addC = xw * hMeasFull_ptHat[ip]->GetBinContent(ix);
-            const double addE = xw * hMeasFull_ptHat[ip]->GetBinError(ix);
-            hMeasFull->SetBinContent(ix, oldC + addC);
-            hMeasFull->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
+            hMeasFull->SetBinContent(ix, oldC + addFullC);
+            hMeasFull->SetBinError(ix, std::sqrt(oldE*oldE + addFullE2));
           }
 
           {
             const double oldC = hMeasTrain->GetBinContent(ix);
             const double oldE = hMeasTrain->GetBinError(ix);
-            const double addC = xw * hMeasTrain_ptHat[ip]->GetBinContent(ix);
-            const double addE = xw * hMeasTrain_ptHat[ip]->GetBinError(ix);
-            hMeasTrain->SetBinContent(ix, oldC + addC);
-            hMeasTrain->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
+            hMeasTrain->SetBinContent(ix, oldC + addTrainC);
+            hMeasTrain->SetBinError(ix, std::sqrt(oldE*oldE + addTrainE2));
           }
 
           {
             const double oldC = hMeasTest->GetBinContent(ix);
             const double oldE = hMeasTest->GetBinError(ix);
-            const double addC = xw * hMeasTest_ptHat[ip]->GetBinContent(ix);
-            const double addE = xw * hMeasTest_ptHat[ip]->GetBinError(ix);
-            hMeasTest->SetBinContent(ix, oldC + addC);
-            hMeasTest->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
+            hMeasTest->SetBinContent(ix, oldC + addTestC);
+            hMeasTest->SetBinError(ix, std::sqrt(oldE*oldE + addTestE2));
           }
         }
       }
@@ -640,6 +675,8 @@ void unfold_embedding(const char* inputFile,
             hTrueTrain_ptHat[ip]->Write("hTrueTrain_centWeight");
             hMeasTrain_ptHat[ip]->Write("hMeasTrain_centWeight");
             hRespTrain_ptHat[ip]->Write("hRespTrain_centWeight");
+
+            hRespTest_ptHat[ip]->Write("hRespTest_centWeight");
 
             hTrueTest_ptHat[ip]->Write("hTrueTest_centWeight");
             hMeasTest_ptHat[ip]->Write("hMeasTest_centWeight");
@@ -1166,6 +1203,7 @@ void unfold_embedding(const char* inputFile,
           delete hTrueTrain_ptHat[ip];
           delete hMeasTrain_ptHat[ip];
           delete hRespTrain_ptHat[ip];
+          delete hRespTest_ptHat[ip];
 
           delete hTrueTest_ptHat[ip];
           delete hMeasTest_ptHat[ip];
