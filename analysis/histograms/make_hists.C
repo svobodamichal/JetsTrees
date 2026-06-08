@@ -219,6 +219,17 @@ void make_hists(const char *infile  = "embedding_merged.root",
                             nbins_meas, bin_meas_edges);
       }
 
+      // Fine/raw spectra before analysis rebinning and insignificant-bin removal
+      TH1D* hSpecFine[N_LEAD];
+      for (int it = 0; it < N_LEAD; ++it) {
+        hSpecFine[it] = new TH1D(
+          Form("hSpecFine_recoPtCorr_ptlead%.0f_%s_%s", PTLEAD_THR[it], rname.c_str(), cname.c_str()),
+          Form("Fine reco p_{T}^{corr} spectrum before masking (ptlead>=%.0f);p_{T}^{reco,corr} [GeV];weighted counts",
+              PTLEAD_THR[it]),
+          nbins_corr, xmin_corr, xmax_corr
+        );
+      }
+
       TH2D* h2_recoCorr_vs_mc_pthat[kNPthatBins];
       TH1D* hSpec_pthat[N_LEAD][kNPthatBins];
 
@@ -263,6 +274,20 @@ void make_hists(const char *infile  = "embedding_merged.root",
 
         // trigger match
         if (!(reco_trigger_match == kTRUE)) continue;
+
+
+        // ---------------------------------------------------------
+        // Fine/raw spectra BEFORE analysis rebinning and bin removal
+        // Here we apply xsecWeight immediately because we are not
+        // merging per-pThat bins later for these histograms.
+        // ---------------------------------------------------------
+        const double wFull = (double)xsecWeight * (double)centralityWeight;
+
+        for (int it = 0; it < N_LEAD; ++it) {
+          if (reco_pt_lead >= (Float_t)PTLEAD_THR[it]) {
+            hSpecFine[it]->Fill((double)reco_pt_corr, wFull);
+          }
+        }
 
 
         // fill 2D for inclusive (ptlead>=0)
@@ -320,7 +345,11 @@ void make_hists(const char *infile  = "embedding_merged.root",
       // ---------------- write hists ----------------
       outC->cd();
       h2_recoCorr_vs_mc->Write();
-      for (int it = 0; it < N_LEAD; ++it) hSpec[it]->Write();
+
+      for (int it = 0; it < N_LEAD; ++it) {
+        hSpec[it]->Write();
+        hSpecFine[it]->Write();
+      }
 
       double Rval = 0.0;
       sscanf(rname.c_str(), "R%lf", &Rval);
@@ -394,8 +423,81 @@ void make_hists(const char *infile  = "embedding_merged.root",
         delete cSpec;
       }
 
+      // ---------------- make PDF: fine spectra before masking ----------------
+      {
+        TCanvas* cSpecFine = new TCanvas("cSpecFine","cSpecFine",800,700);
+        cSpecFine->SetLogy();
+
+        hSpecFine[0]->SetTitle("");
+        hSpecFine[0]->GetXaxis()->SetTitle("#it{p}_{T, reco}^{corr} (GeV/#it{c})");
+        hSpecFine[0]->GetYaxis()->SetTitle("Weighted counts");
+        hSpecFine[0]->GetXaxis()->SetRangeUser(-10, 60);
+
+        hSpecFine[0]->SetMarkerStyle(20);
+        hSpecFine[0]->SetLineColor(kBlack);
+        hSpecFine[0]->SetMarkerColor(kBlack);
+
+        hSpecFine[1]->SetMarkerStyle(21);
+        hSpecFine[1]->SetLineColor(kRed+1);
+        hSpecFine[1]->SetMarkerColor(kRed+1);
+
+        hSpecFine[2]->SetMarkerStyle(22);
+        hSpecFine[2]->SetLineColor(kBlue+1);
+        hSpecFine[2]->SetMarkerColor(kBlue+1);
+
+        hSpecFine[3]->SetMarkerStyle(23);
+        hSpecFine[3]->SetLineColor(kGreen+2);
+        hSpecFine[3]->SetMarkerColor(kGreen+2);
+
+        hSpecFine[0]->Draw("E1");
+        hSpecFine[1]->Draw("E1 SAME");
+        hSpecFine[2]->Draw("E1 SAME");
+        hSpecFine[3]->Draw("E1 SAME");
+
+        TLegend* legFine = new TLegend(0.60, 0.68, 0.88, 0.88);
+        legFine->SetBorderSize(0);
+        legFine->SetFillStyle(0);
+        legFine->SetTextSize(0.04);
+
+        for (int it=0; it<N_LEAD; ++it) {
+          legFine->AddEntry(hSpecFine[it],
+                            Form("#it{p}_{T}^{lead} #geq %.0f GeV", PTLEAD_THR[it]),
+                            "lep");
+        }
+        legFine->Draw();
+
+        TString line1;
+        line1.Form("R = %.1f, %s", Rval, centLabel.Data());
+
+        TLatex tex;
+        tex.SetNDC();
+        tex.SetTextFont(42);
+        tex.SetTextSize(0.045);
+
+        tex.DrawLatex(0.32, 0.25, line1.Data());
+        tex.DrawLatex(0.32, 0.19, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
+        tex.DrawLatex(0.32, 0.13, "Before analysis rebinning / bin removal");
+
+        TString pdfNameFine;
+        pdfNameFine.Form("%s/spectra_ptlead_embed_FINE_beforeMask_%s_%s.pdf",
+                        pdfCDir.Data(), rname.c_str(), cname.c_str());
+
+        cSpecFine->SaveAs(pdfNameFine.Data());
+
+        TString pngNameFine = pdfNameFine;
+        pngNameFine.ReplaceAll(".pdf", ".png");
+        cSpecFine->SaveAs(pngNameFine.Data());
+
+        delete legFine;
+        delete cSpecFine;
+      }
+
       delete h2_recoCorr_vs_mc;
-      for (int it = 0; it < N_LEAD; ++it) delete hSpec[it];
+
+      for (int it = 0; it < N_LEAD; ++it) {
+        delete hSpec[it];
+        delete hSpecFine[it];
+      }
 
       for (int ip = 0; ip < kNPthatBins; ++ip) {
         delete h2_recoCorr_vs_mc_pthat[ip];

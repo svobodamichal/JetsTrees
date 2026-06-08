@@ -30,11 +30,11 @@ if [[ $# -ge 2 ]]; then
     INPUT="${BASE}/trees/$2"
   fi
 else
-  INPUT="${BASE}/trees/embedding_merged.root"
+  INPUT="${BASE}/trees/embedding_merged_NoVeto.root"
 fi
 
 # 3rd arg: output directory (default: analysis/unfolding/out_embedding under BASE)
-OUT_DIR="${3:-${SCRIPT_DIR}/out_embedding_${METHOD}_origina}l"
+OUT_DIR="${3:-${SCRIPT_DIR}/out_embedding_${METHOD}}"
 
 ########################
 # Checks

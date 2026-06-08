@@ -103,8 +103,47 @@ int StPicoHFJetMaker::InitJets() {
                        "#rho vs refMult;refMult;#rho (GeV/c per unit area)",
                        800, 0, 800,     // adjust refMult range/binning to your dataset
                        200, 0.0, 200.0  // adjust rho range/binning as needed
-                       ));                     
+                       ));
 
+  if (!mIsEmbedding) {
+    // Accepted-event QA split by the three analysis centrality classes.
+    for (int c3 = 1; c3 <= 3; ++c3) {
+      const char* centTag = kCentTag[c3];
+
+      mOutList->Add(new TH1I(Form("hevents_acc_%s", centTag),
+                             Form("accepted events (%s);bin;events", centTag),
+                             2, 0, 2));
+      mOutList->Add(new TH1D(Form("hevents_acc_weighted_%s", centTag),
+                             Form("accepted events weighted (%s);bin;weighted events", centTag),
+                             2, 0, 2));
+
+      mOutList->Add(new TH1F(Form("hzvertex_acc_%s", centTag),
+                             Form("accepted z-vertex (%s);z [cm];events", centTag),
+                             250, -50, 50));
+      mOutList->Add(new TH1D(Form("hzvertex_acc_weighted_%s", centTag),
+                             Form("accepted z-vertex weighted (%s);z [cm];weighted events", centTag),
+                             250, -50, 50));
+
+      mOutList->Add(new TH1I(Form("hrunId_acc_%s", centTag),
+                             Form("accepted events runId (%s);runId;events", centTag),
+                             90913, 15076101, 15167014));
+      mOutList->Add(new TH1D(Form("hrunId_acc_weighted_%s", centTag),
+                             Form("accepted events runId weighted (%s);runId;weighted events", centTag),
+                             90913, 15076101, 15167014));
+
+      TH1D* hNormSummary = new TH1D(Form("hNormSummary_%s", centTag),
+                                    Form("normalization summary (%s);quantity;counts", centTag),
+                                    2, 0.5, 2.5);
+      hNormSummary->GetXaxis()->SetBinLabel(1, "N_HT_acc");
+      hNormSummary->GetXaxis()->SetBinLabel(2, "N_MB_equiv");
+      hNormSummary->GetXaxis()->CenterLabels(true);
+      mOutList->Add(hNormSummary);
+
+      mOutList->Add(new TH1D(Form("hrunId_eqMb_%s", centTag),
+                             Form("equivalent MB by run (%s);runId;N_{MB}^{equiv}", centTag),
+                             90913, 15076101, 15167014));
+    }
+  }
 
   TDirectory* fileDir = gDirectory;
   fTreeRC.clear();
@@ -246,6 +285,40 @@ int StPicoHFJetMaker::MakeJets() {
   return kStOK;
   }
 
+  if (!mIsEmbedding) {
+    const char* centTag = kCentTag[c3];
+
+    TH1I* hEventsAcc =
+        static_cast<TH1I*>(mOutList->FindObject(Form("hevents_acc_%s", centTag)));
+    TH1D* hEventsAccWeighted = static_cast<TH1D*>(
+        mOutList->FindObject(Form("hevents_acc_weighted_%s", centTag)));
+    TH1F* hVzAcc =
+        static_cast<TH1F*>(mOutList->FindObject(Form("hzvertex_acc_%s", centTag)));
+    TH1D* hVzAccWeighted = static_cast<TH1D*>(
+        mOutList->FindObject(Form("hzvertex_acc_weighted_%s", centTag)));
+    TH1I* hRunAcc =
+        static_cast<TH1I*>(mOutList->FindObject(Form("hrunId_acc_%s", centTag)));
+    TH1D* hRunAccWeighted = static_cast<TH1D*>(
+        mOutList->FindObject(Form("hrunId_acc_weighted_%s", centTag)));
+    TH1D* hNormSummary =
+        static_cast<TH1D*>(mOutList->FindObject(Form("hNormSummary_%s", centTag)));
+    TH1D* hRunEqMb =
+        static_cast<TH1D*>(mOutList->FindObject(Form("hrunId_eqMb_%s", centTag)));
+    const double runEqMbWeight = getRunEqMbWeight(fRunNumber);
+
+    if (hEventsAcc) hEventsAcc->Fill(1);
+    if (hEventsAccWeighted) hEventsAccWeighted->Fill(1.0, fCentralityWeight);
+    if (hVzAcc) hVzAcc->Fill(vz);
+    if (hVzAccWeighted) hVzAccWeighted->Fill(vz, fCentralityWeight);
+    if (hRunAcc) hRunAcc->Fill(fRunNumber);
+    if (hRunAccWeighted) hRunAccWeighted->Fill(fRunNumber, fCentralityWeight);
+    if (hNormSummary) {
+      hNormSummary->Fill(1.0);
+      hNormSummary->Fill(2.0, runEqMbWeight);
+    }
+    if (hRunEqMb) hRunEqMb->Fill(fRunNumber, runEqMbWeight);
+  }
+
   // MC tracks
   int noMCtracks = mPicoDst->numberOfMcTracks();
   for (int i = 0; i < noMCtracks; i++) {
@@ -280,22 +353,22 @@ int StPicoHFJetMaker::MakeJets() {
     MCjetTracks.push_back(inputMcParticle);
   }
 
-// if (mIsEmbedding && fpThatmax > 0.0 && !MCjetTracks.empty()) {
-//   float Rcheck = fR.empty() ? 0.4f : *std::max_element(fR.begin(), fR.end());
-//   fastjet::JetDefinition mc_jet_def_veto(fastjet::antikt_algorithm, Rcheck);
-//   fastjet::ClusterSequence mc_cs_veto(MCjetTracks, mc_jet_def_veto);
-//   std::vector<fastjet::PseudoJet> mcjets_veto =
-//       sorted_by_pt(mc_cs_veto.inclusive_jets(1.0)); // pT > 1 GeV
+if (mIsEmbedding && fpThatmax > 0.0 && !MCjetTracks.empty()) {
+  float Rcheck = fR.empty() ? 0.4f : *std::max_element(fR.begin(), fR.end());
+  fastjet::JetDefinition mc_jet_def_veto(fastjet::antikt_algorithm, Rcheck);
+  fastjet::ClusterSequence mc_cs_veto(MCjetTracks, mc_jet_def_veto);
+  std::vector<fastjet::PseudoJet> mcjets_veto =
+      sorted_by_pt(mc_cs_veto.inclusive_jets(1.0)); // pT > 1 GeV
 
-//   const double ptMaxVeto = 1.5 * fpThatmax;
+  const double ptMaxVeto = 1.5 * fpThatmax;
 
-//   for (size_t i = 0; i < mcjets_veto.size(); ++i) {
-//     if (mcjets_veto[i].perp() > ptMaxVeto) {
-//       return kStOK;
-//     }
-//   }
+  for (size_t i = 0; i < mcjets_veto.size(); ++i) {
+    if (mcjets_veto[i].perp() > ptMaxVeto) {
+      return kStOK;
+    }
+  }
  
-// }
+}
   // RC part
   GetCaloTrackMomentum(mPicoDst, mPrimVtx); // fill array Sump with momenta of tracks which are matched to BEMC
 
@@ -442,7 +515,7 @@ if (hRhoVsRefMult && !vetoReco && !fullTracks.empty()) {
 }
 
 //======================================================================//
-// const double ptMaxVeto = (mIsEmbedding && fpThatmax > 0.0) ? (1.5 * fpThatmax) : -1.0;
+const double ptMaxVeto = (mIsEmbedding && fpThatmax > 0.0) ? (2.0 * fpThatmax) : -1.0;
 for (unsigned int i = 0; i < fR.size(); i++) {
   fastjet::JetDefinition jet_def(fastjet::antikt_algorithm, fR[i]);
   float maxRapJet = 1 - fR[i];
@@ -464,14 +537,14 @@ for (unsigned int i = 0; i < fR.size(); i++) {
     }
   }
 
-//   if (ptMaxVeto > 0.0 && !fullTracks.empty()) {
-//   for (size_t jr = 0; jr < myRecoJets.size(); ++jr) {
-//     if (myRecoJets[jr].pt_corr > ptMaxVeto) {
-//       myRecoJets.clear();
-//       return kStOK; // veto whole event
-//     }
-//   }
-// }
+  if (ptMaxVeto > 0.0 && !fullTracks.empty()) {
+  for (size_t jr = 0; jr < myRecoJets.size(); ++jr) {
+    if (myRecoJets[jr].pt_corr > ptMaxVeto) {
+      myRecoJets.clear();
+      return kStOK; // veto whole event
+    }
+  }
+}
 
   //======================================================================//
 

@@ -20,29 +20,39 @@ MACRO="${SCRIPT_DIR}/unfold_data.cxx"
 # Arguments
 ########################
 
-# 1st arg: data input (either absolute path or basename under ${BASE}/trees)
+# 1st arg: HT data input
 if [[ $# -ge 1 ]]; then
   if [[ "$1" = /* ]]; then
-    INPUT="$1"
+    INPUT_HT="$1"
   else
-    INPUT="${BASE}/trees/$1"
+    INPUT_HT="${BASE}/trees/$1"
   fi
 else
-  INPUT="${BASE}/trees/data_merged.root"
+  INPUT_HT="${BASE}/trees/data_merged.root"
 fi
 
-# 2nd arg: RESPONSE ROOT FILE (single file with all tag directories)
-RESP_FILE="${2:-${SCRIPT_DIR}/out_embedding/responses_embedding.root}"
+# 2nd arg: MB data input
+if [[ $# -ge 2 ]]; then
+  if [[ "$2" = /* ]]; then
+    INPUT_MB="$2"
+  else
+    INPUT_MB="${BASE}/trees/$2"
+  fi
+else
+  INPUT_MB="${BASE}/trees/dataMB_merged.root"
+fi
 
-# 3rd arg: EFFICIENCIES ROOT FILE
-# default: analysis/efficiencies/efficiencies.root (based on your folder layout)
-EFF_FILE="${3:-${BASE}/analysis/efficiencies/efficiencies.root}"
+# 3rd arg: RESPONSE ROOT FILE
+RESP_FILE="${3:-${SCRIPT_DIR}/out_embedding_BAYES/responses_embedding.root}"
 
-# 4th arg: output directory for unfolded data spectra
-OUT_DIR="${4:-${SCRIPT_DIR}/out_data}"
+# 4th arg: EFFICIENCIES ROOT FILE
+EFF_FILE="${4:-${BASE}/analysis/efficiencies/efficiencies.root}"
 
-# 5th arg: number of Bayes iterations
-NITER="${5:-4}"
+# 5th arg: output directory
+OUT_DIR="${5:-${SCRIPT_DIR}/out_data}"
+
+# 6th arg: number of Bayes iterations
+NITER="${6:-4}"
 
 ########################
 # Checks
@@ -50,20 +60,22 @@ NITER="${5:-4}"
 
 echo "----------------------------------------"
 echo "Running unfolding on REAL DATA"
-echo "SCRIPT_DIR  : $SCRIPT_DIR"
-echo "BASE        : $BASE"
-echo "SIF         : $SIF"
-echo "Macro       : $MACRO"
-echo "Input data  : $INPUT"
-echo "Resp. file  : $RESP_FILE"
-echo "Eff. file   : $EFF_FILE"
-echo "Output dir  : $OUT_DIR"
-echo "Iterations  : $NITER"
+echo "SCRIPT_DIR    : $SCRIPT_DIR"
+echo "BASE          : $BASE"
+echo "SIF           : $SIF"
+echo "Macro         : $MACRO"
+echo "Input HT data : $INPUT_HT"
+echo "Input MB data : $INPUT_MB"
+echo "Resp. file    : $RESP_FILE"
+echo "Eff. file     : $EFF_FILE"
+echo "Output dir    : $OUT_DIR"
+echo "Iterations    : $NITER"
 echo "----------------------------------------"
 
 [[ -f "$SIF"       ]] || { echo "ERROR: SIF not found:       $SIF";       exit 1; }
 [[ -f "$MACRO"     ]] || { echo "ERROR: MACRO not found:     $MACRO";     exit 1; }
-[[ -f "$INPUT"     ]] || { echo "ERROR: Input not found:     $INPUT";     exit 1; }
+[[ -f "$INPUT_HT"  ]] || { echo "ERROR: HT input not found:  $INPUT_HT";  exit 1; }
+[[ -f "$INPUT_MB"  ]] || { echo "ERROR: MB input not found:  $INPUT_MB";  exit 1; }
 [[ -f "$RESP_FILE" ]] || { echo "ERROR: Resp. file not found: $RESP_FILE"; exit 1; }
 [[ -f "$EFF_FILE"  ]] || { echo "ERROR: Eff. file not found: $EFF_FILE"; exit 1; }
 
@@ -78,7 +90,7 @@ apptainer exec -e -B /gpfs01 \
   "$SIF" \
   root -l -b <<EOF
 gSystem->Load("libRooUnfold");
-.x ${MACRO}+("${INPUT}","${RESP_FILE}","${EFF_FILE}","${OUT_DIR}",${NITER});
+.x ${MACRO}+("${INPUT_HT}","${INPUT_MB}","${RESP_FILE}","${EFF_FILE}","${OUT_DIR}",${NITER});
 .q
 EOF
 

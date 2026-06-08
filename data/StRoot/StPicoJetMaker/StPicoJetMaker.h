@@ -1,6 +1,8 @@
 #ifndef StPicoJetMaker_h
 #define StPicoJetMaker_h
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include "StChain/StMaker.h"
@@ -22,6 +24,14 @@
 
 class StPicoJetMaker : public StMaker {
 public:
+  struct RunData {
+    int runNumber;
+    double numberOfEvents;
+    double sampledLuminosity;
+    double prescale;
+    double livetime;
+  };
+
   StPicoJetMaker(TString name, StPicoDstMaker *picoMaker,
                  TString outputBaseFileName);
   virtual ~StPicoJetMaker();
@@ -51,6 +61,7 @@ public:
 protected:
   bool isMcMode() const;
   unsigned int isMakerMode() const;
+  double getRunEqMbWeight(int runId) const;
 
   // -- protected members ------------------------
 
@@ -73,6 +84,10 @@ private:
 
   void initializeEventStats();
   void fillEventStats(int *aEventStat);
+  std::map<int, RunData> readDataFromFile(const std::string &filename) const;
+  double calculateRunEqMbWeight(const RunData &htRunData,
+                                const RunData &mbRunData) const;
+  void precomputeWeights();
 
   // -- private members ------------------------
 
@@ -93,6 +108,8 @@ private:
 
   TFile *mOutputFileTree; // ptr to file saving the HFtree
   TFile *mOutputFileList; // ptr to file saving the list of histograms
+  std::map<int, double> mRunEqMbWeightMap;
+  mutable std::map<int, bool> mMissingRunWeightWarned;
   ClassDef(StPicoJetMaker, 0)
 };
 

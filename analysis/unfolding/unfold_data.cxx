@@ -10,6 +10,9 @@
 #include "TSystem.h"
 #include "TStyle.h"
 #include "TMatrixD.h"
+#include "TDirectory.h"
+#include "TParameter.h"
+#include "TAxis.h"
 
 #include <vector>
 #include <string>
@@ -79,14 +82,118 @@ static void ApplyMultiplyCorr(TH1D* spec,
                               const TH1D* fac,
                               bool verbose = true);                            
 
-/**
- * dataFile     : real data jets (with JetTree)
- * responseFile : single ROOT file containing per-tag directories:
- *                R*_CENT_*_ptlead* / { response, hPrior, ... }
- * outDir       : where unfolded data ROOT file will be written
- * nIter        : Bayes iterations (default 4)
- */
-void unfold_data(const char* dataFile,
+static TH1D* MakeFinalInvariantSpectrum(const TH1D* src,
+                                         const char* outName,
+                                         double nEqMB,
+                                         double jetR,
+                                         bool verbose = true);
+
+static TH1* GetHistAnyDir(TFile* f, const std::string& name)
+{
+  if (!f) return nullptr;
+
+  TH1* h = dynamic_cast<TH1*>(f->Get(name.c_str()));
+  if (h) return h;
+
+  h = dynamic_cast<TH1*>(f->Get(("QA_histograms/" + name).c_str()));
+  if (h) return h;
+
+  h = dynamic_cast<TH1*>(f->Get(("eventQA/" + name).c_str()));
+  if (h) return h;
+
+  return nullptr;
+}
+
+static double CalcEqMbWithR(TFile* fHT,
+                            TFile* fMB,
+                            const std::string& centTag,
+                            TDirectory* outDir = nullptr)
+{
+  TH1* hHTAll = GetHistAnyDir(fHT, "hrunId");
+  TH1* hMBAll = GetHistAnyDir(fMB, "hrunId");
+
+  TH1* hHTAcc = GetHistAnyDir(fHT, Form("hrunId_acc_%s", centTag.c_str()));
+  TH1* hMBAcc = GetHistAnyDir(fMB, Form("hrunId_acc_%s", centTag.c_str()));
+
+  TH1* hEqNoR = GetHistAnyDir(fHT, Form("hrunId_eqMb_%s", centTag.c_str()));
+
+  if (!hHTAll || !hMBAll || !hHTAcc || !hMBAcc || !hEqNoR) {
+    cout << "[error] Missing normalization histograms for " << centTag << endl;
+    cout << "        Need hrunId, hrunId_acc_" << centTag
+         << ", hrunId_eqMb_" << centTag << " in HT file and hrunId, hrunId_acc_"
+         << centTag << " in MB file." << endl;
+    return -1.0;
+  }
+
+  TH1D* hRHT = (TH1D*)hEqNoR->Clone(Form("hR_HT_%s", centTag.c_str()));
+  TH1D* hRMB = (TH1D*)hEqNoR->Clone(Form("hR_MB_%s", centTag.c_str()));
+  TH1D* hRatio = (TH1D*)hEqNoR->Clone(Form("hRratio_MB_over_HT_%s", centTag.c_str()));
+  TH1D* hEqWithR = (TH1D*)hEqNoR->Clone(Form("hrunId_eqMb_withR_%s", centTag.c_str()));
+
+  hRHT->Reset();
+  hRMB->Reset();
+  hRatio->Reset();
+  hEqWithR->Reset();
+
+  double neqNoR = 0.0;
+  double neqWithR = 0.0;
+
+  for (int ib = 1; ib <= hEqNoR->GetNbinsX(); ++ib) {
+    const double eqNoR = hEqNoR->GetBinContent(ib);
+
+    const double htAll = hHTAll->GetBinContent(ib);
+    const double htAcc = hHTAcc->GetBinContent(ib);
+
+    const double mbAll = hMBAll->GetBinContent(ib);
+    const double mbAcc = hMBAcc->GetBinContent(ib);
+
+    if (eqNoR <= 0.0) continue;
+
+    neqNoR += eqNoR;
+
+    if (htAll <= 0.0 || mbAll <= 0.0 || htAcc <= 0.0) continue;
+
+    const double RHT = htAcc / htAll;
+    const double RMB = mbAcc / mbAll;
+
+    if (RHT <= 0.0) continue;
+
+    const double ratio = RMB / RHT;
+    const double eqWithR = eqNoR * ratio;
+
+    hRHT->SetBinContent(ib, RHT);
+    hRMB->SetBinContent(ib, RMB);
+    hRatio->SetBinContent(ib, ratio);
+    hEqWithR->SetBinContent(ib, eqWithR);
+
+    neqWithR += eqWithR;
+  }
+
+  cout << "    Normalization " << centTag << ":" << endl;
+  cout << "      N_MB_equiv no R   = " << neqNoR << endl;
+  cout << "      N_MB_equiv with R = " << neqWithR << endl;
+  if (neqNoR > 0.0)
+    cout << "      global withR/noR  = " << neqWithR / neqNoR << endl;
+
+  if (outDir) {
+    outDir->cd();
+    hRHT->Write();
+    hRMB->Write();
+    hRatio->Write();
+    hEqWithR->Write();
+  }
+
+  delete hRHT;
+  delete hRMB;
+  delete hRatio;
+  delete hEqWithR;
+
+  return neqWithR;
+}
+
+
+void unfold_data(const char* dataFileHT,
+                 const char* dataFileMB,
                  const char* responseFile,
                  const char* effFile,
                  const char* outDir,
@@ -96,15 +203,23 @@ void unfold_data(const char* dataFile,
   EnsureDir(outDir);
   TH1::SetDefaultSumw2(kTRUE);
 
-  TFile* fData = TFile::Open(dataFile, "READ");
+  TFile* fData = TFile::Open(dataFileHT, "READ");
   if (!fData || fData->IsZombie()) {
-    cout << "[error] Cannot open data file: " << dataFile << endl;
+    cout << "[error] Cannot open HT data file: " << dataFileHT << endl;
+    return;
+  }
+
+  TFile* fDataMB = TFile::Open(dataFileMB, "READ");
+  if (!fDataMB || fDataMB->IsZombie()) {
+    cout << "[error] Cannot open MB data file: " << dataFileMB << endl;
+    fData->Close(); delete fData;
     return;
   }
 
   TFile* fRespAll = TFile::Open(responseFile, "READ");
   if (!fRespAll || fRespAll->IsZombie()) {
     cout << "[error] Cannot open response file: " << responseFile << endl;
+    fDataMB->Close(); delete fDataMB;
     fData->Close(); delete fData;
     return;
   }
@@ -113,6 +228,7 @@ void unfold_data(const char* dataFile,
   if (!fEff || fEff->IsZombie()) {
     cout << "[error] Cannot open efficiencies file: " << effFile << endl;
     fRespAll->Close(); delete fRespAll;
+    fDataMB->Close();  delete fDataMB;
     fData->Close();    delete fData;
     return;
   }
@@ -123,12 +239,14 @@ void unfold_data(const char* dataFile,
     cout << "[error] Cannot create output file: " << outRootPath << endl;
     fEff->Close();     delete fEff;
     fRespAll->Close(); delete fRespAll;
+    fDataMB->Close();  delete fDataMB;
     fData->Close();    delete fData;
     return;
   }
 
   cout << "\n=== Unfolding real data ===\n";
-  cout << "  Data file     : " << dataFile << "\n";
+  cout << "  HT data file  : " << dataFileHT << "\n";
+  cout << "  MB data file  : " << dataFileMB << "\n";
   cout << "  Response file : " << responseFile << "\n";
   cout << "  Output file   : " << outRootPath << "\n";
   cout << "  Bayes iters   : " << nIter << "\n\n";
@@ -186,6 +304,23 @@ void unfold_data(const char* dataFile,
         cout << "  [note] empty tree in data, skip.\n";
         continue;
       }
+
+      TDirectory* normDir = fOutAll->GetDirectory("normalization");
+      if (!normDir) normDir = fOutAll->mkdir("normalization");
+
+      const double nEqMB_withR = CalcEqMbWithR(fData, fDataMB, C, normDir);
+
+      if (nEqMB_withR <= 0.0) {
+        cout << "  [error] Bad equivalent MB normalization for " << C
+            << ", skipping centrality." << endl;
+        continue;
+      }
+
+      // Store scalar normalization too. The run-by-run QA histograms are written
+      // inside CalcEqMbWithR().
+      normDir->cd();
+      TParameter<double>(Form("N_MB_equiv_withR_%s", C.c_str()),
+                         nEqMB_withR).Write("", TObject::kOverwrite);
 
       for (int ic = 0; ic < kNPtLeadCuts; ++ic) {
         const double cut = kPtLeadCuts[ic];
@@ -337,6 +472,29 @@ void unfold_data(const char* dataFile,
       //  TH1D* hMatchEffTruth = 0;               // TEMP: match-eff disabled
       //  TH1D* hUnfoldedTruthBins_matchCorr = 0; // keep null
 
+        // ---------------- final physics normalization ----------------
+        //
+        // The raw unfolded spectra are counts.  These final spectra are
+        //
+        //   (1/N_evt^MB) * (1/(2*pi*pT)) * d^2N_jet/(dpT deta)
+        //
+        // using Delta eta = 2*(1-R), because |eta_jet| < 1-R.
+        //
+        // Keep both raw and final histograms in the ROOT output.  Use the
+        // match-corrected final histogram for physics if hMatchEffTruth exists.
+        TH1D* hUnfoldedTruthBins_raw_finalInvariant =
+            MakeFinalInvariantSpectrum(hUnfoldedTruthBins_raw,
+                                        Form("hUnfoldedTruthBins_raw_finalInvariant_%s", tag.c_str()),
+                                        nEqMB_withR, Rval, true);
+
+        TH1D* hUnfoldedTruthBins_matchCorr_finalInvariant = 0;
+        if (hUnfoldedTruthBins_matchCorr) {
+          hUnfoldedTruthBins_matchCorr_finalInvariant =
+              MakeFinalInvariantSpectrum(hUnfoldedTruthBins_matchCorr,
+                                          Form("hUnfoldedTruthBins_matchCorr_finalInvariant_%s", tag.c_str()),
+                                          nEqMB_withR, Rval, true);
+        }
+
         // ---------------- save to output file ----------------
         TDirectory* dOut = fOutAll->mkdir(tagfile.c_str());
         if (!dOut) dOut = fOutAll->GetDirectory(tagfile.c_str());
@@ -351,6 +509,13 @@ void unfold_data(const char* dataFile,
         hUnfoldedTruthBins_raw->Write("hUnfoldedTruthBins_raw", TObject::kOverwrite);
         if (hMatchEffTruth) hMatchEffTruth->Write("hMatchEffTruth", TObject::kOverwrite);
         if (hUnfoldedTruthBins_matchCorr) hUnfoldedTruthBins_matchCorr->Write("hUnfoldedTruthBins_matchCorr", TObject::kOverwrite);
+        hUnfoldedTruthBins_raw_finalInvariant->Write("hUnfoldedTruthBins_raw_finalInvariant", TObject::kOverwrite);
+        if (hUnfoldedTruthBins_matchCorr_finalInvariant)
+          hUnfoldedTruthBins_matchCorr_finalInvariant->Write("hUnfoldedTruthBins_matchCorr_finalInvariant", TObject::kOverwrite);
+
+        TParameter<double>("N_MB_equiv_withR", nEqMB_withR).Write("", TObject::kOverwrite);
+        TParameter<double>("jetR", Rval).Write("", TObject::kOverwrite);
+        TParameter<double>("deltaEta", 2.0*(1.0-Rval)).Write("", TObject::kOverwrite);
 
         TMatrixD cov = unfold.Eunfold(RooUnfold::kCovariance);
         cov.Write("covariance", TObject::kOverwrite);
@@ -367,6 +532,8 @@ void unfold_data(const char* dataFile,
         if (hPurityReco) delete hPurityReco;
         if (hMatchEffTruth) delete hMatchEffTruth;
         if (hUnfoldedTruthBins_matchCorr) delete hUnfoldedTruthBins_matchCorr;
+        if (hUnfoldedTruthBins_raw_finalInvariant) delete hUnfoldedTruthBins_raw_finalInvariant;
+        if (hUnfoldedTruthBins_matchCorr_finalInvariant) delete hUnfoldedTruthBins_matchCorr_finalInvariant;
       } // ptlead cuts
     } // centralities
   } // radii
@@ -380,6 +547,9 @@ void unfold_data(const char* dataFile,
 
   fData->Close();
   delete fData;
+
+  fDataMB->Close(); 
+  delete fDataMB;
 
   fEff->Close();
   delete fEff;
@@ -437,6 +607,60 @@ static TH1D* GetEffHistChecked(TFile* fEff,
   TH1D* hc = (TH1D*)h->Clone(cloneNameForOut);
   hc->SetDirectory(0);
   return hc;
+}
+
+
+static TH1D* MakeFinalInvariantSpectrum(const TH1D* src,
+                                         const char* outName,
+                                         double nEqMB,
+                                         double jetR,
+                                         bool verbose)
+{
+  if (!src) return 0;
+
+  TH1D* h = (TH1D*)src->Clone(outName);
+  h->SetDirectory(0);
+  h->SetTitle(Form("%s;#it{p}_{T,jet} (GeV/#it{c});(1/N_{evt})(1/2#pi p_{T}) d^{2}N_{jet}/d#it{p}_{T}d#eta",
+                   src->GetTitle()));
+
+  const double deltaEta = 2.0 * (1.0 - jetR);
+
+  if (nEqMB <= 0.0 || deltaEta <= 0.0) {
+    if (verbose) {
+      cout << "    [ERROR] cannot make final invariant spectrum for "
+           << src->GetName() << ": N_MB_equiv=" << nEqMB
+           << ", deltaEta=" << deltaEta << endl;
+    }
+    h->Reset();
+    return h;
+  }
+
+  for (int ib = 1; ib <= h->GetNbinsX(); ++ib) {
+    const double y  = h->GetBinContent(ib);
+    const double ey = h->GetBinError(ib);
+    const double pt = h->GetXaxis()->GetBinCenter(ib);
+    const double bw = h->GetXaxis()->GetBinWidth(ib);
+
+    if (pt <= 0.0 || bw <= 0.0) {
+      h->SetBinContent(ib, 0.0);
+      h->SetBinError(ib, 0.0);
+      continue;
+    }
+
+    const double norm = nEqMB * bw * deltaEta * (2.0 * M_PI * pt);
+
+    h->SetBinContent(ib, y  / norm);
+    h->SetBinError(ib, ey / norm);
+  }
+
+  if (verbose) {
+    cout << "    made final invariant spectrum: " << h->GetName() << endl;
+    cout << "      N_MB_equiv = " << nEqMB
+         << ", DeltaEta = " << deltaEta
+         << ", factor includes DeltaPt and 2*pi*pT bin-by-bin" << endl;
+  }
+
+  return h;
 }
 
 static void ApplyDivideCorr(TH1D* spec,

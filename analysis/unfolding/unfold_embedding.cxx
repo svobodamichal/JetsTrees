@@ -36,7 +36,6 @@ static const double kMinSignif = std::sqrt(10.0);  // content/error > sqrt(10)
 static const bool   kSavePtHatDebug = true;
 
 // measured & truth binning
-//----------------------------------------------------------------- original binning 
 static const int nbins_meas = 24;
 static const double bin_meas_edges[nbins_meas+1] = {
   -100,-80,-60,-40,-20,-10,-5,-2.5,0,2.5,5,7.5,10,12.5,15,17.5,
@@ -47,53 +46,6 @@ static const int nbins_truth = 10;
 static const double bin_truth_edges[nbins_truth+1] = {
   0,5,10,15,20,25,30,35,40,50,60
 };
-//----------------------------------------------------------------- bin choice: 1
-
-// static const int nbins_truth = 7;
-// static const double bin_truth_edges[nbins_truth+1] = {
-//   0, 5, 10, 15, 20, 30, 40, 60
-// };
-
-
-// static const int nbins_meas = 18;
-// static const double bin_meas_edges[nbins_meas+1] = {
-//   -100,-80,-60,-40,-20,-10,-5,-2.5,0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60
-// };
-
-// --------------------------------------------------------------bin choice: 2
-
-// static const int nbins_truth = 10;
-// static const double bin_truth_edges[nbins_truth+1] = {
-//   0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60
-// };
-
-
-// static const int nbins_meas = 18;
-// static const double bin_meas_edges[nbins_meas+1] = {
-//   -100,-80,-60,-40,-20,-10,-5,-2.5,0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60
-// };
-// --------------------------------------------------------------bin choice: 3 (same as 2 but with finer low-pt bins)
-// static const int nbins_truth = 10;
-// static const double bin_truth_edges[nbins_truth+1] = {
-//   0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60
-// };
-
-
-// static const int nbins_meas = 18;
-// static const double bin_meas_edges[nbins_meas+1] = {
-//   -100,-80,-60,-40,-20,-10,-5,-2.5,0, 3, 6, 9, 12, 15, 20, 30, 40, 50, 60
-// };
-// --------------------------------------------------------------bin choice: 4
-// static const int nbins_truth = 10;
-// static const double bin_truth_edges[nbins_truth+1] = {
-//   0, 6, 10, 15, 20, 25, 30, 35, 40, 50, 60
-// };
-
-
-// static const int nbins_meas = 23;
-// static const double bin_meas_edges[nbins_meas+1] = {
-//   -100,-80,-60,-40,-20,-10,-5,-2.5,0, 2, 4, 6, 8, 10, 12.5, 15, 17.5, 20, 25 , 30, 35, 40, 50, 60
-// };
 
 
 static const vector<string> kCentralities =
@@ -112,6 +64,8 @@ static TString NiceCentLabel(const std::string& centToken)
 
 static const vector<string> kRadii =
   {"R0.2", "R0.3", "R0.4"};
+
+static const int kFirstPtHatBinToUse = 2;  // ignore pThat bins 0 and 1  
 
 // ---- pThat bins (upper edges) and xsec weights (same order) ----
 static const int kNPthatBins = 11;
@@ -152,6 +106,10 @@ static const double CUT_AREA_04 = 0.40;  // R = 0.4
 static const double CUT_NEUTRAL_FRACTION = 0.95;
 
 // --------------------------------------------------------------
+static bool DrawBayesIter(int iter)
+{
+  return (iter == 1 || iter == 4 || iter == 5 || iter == 8);
+}
 
 static void EnsureDir(const string& path){
   if (gSystem->AccessPathName(path.c_str()))
@@ -400,26 +358,31 @@ void unfold_embedding(const char* inputFile,
           const int ip = FindPtHatBin((double)xsecWeight);
           if (ip < 0) continue;
 
+          // Ignore first two pThat bins: indices 0 and 1
+          if (ip < kFirstPtHatBinToUse) continue;
+
           const double wCent = (double)centralityWeight;
 
           const bool haveMC = (mc_pt > 0.0);
           const bool haveReco = (reco_pt_corr > RECO_PTCORR_DUMMY_CUT);
 
           // ----- fill prior: only MC-side cuts -----
-          if (haveMC && mc_pt_lead >= cut) {
-            hPrior_ptHat[ip]->Fill(mc_pt, wCent);
+          if (haveMC) {
+              hPrior_ptHat[ip]->Fill(mc_pt, wCent);
           }
 
           // ----- reco-side cuts for response & closure -----
           if (!haveReco) continue;
           if (reco_neutral_fraction > CUT_NEUTRAL_FRACTION) continue;
 
-          // existing quality/trigger cuts
-          if (!reco_trigger_match) continue;
+          // reco quality cuts
+          // no trigger requirement here: trigger correction will be external
+          // if (!reco_trigger_match) continue;
           if (reco_area < areaMin) continue;
 
           // dual ptlead cut (both reco & MC)
-          if (!(reco_pt_lead >= cut && mc_pt_lead >= cut)) continue;
+      //    if (!(reco_pt_lead >= cut && mc_pt_lead >= cut)) continue;
+          if (reco_pt_lead < cut) continue;   
 
           // ===== full-statistics response (temporary, per pThat, centrality-weighted only) =====
           hRespFull_ptHat[ip]->Fill(reco_pt_corr, mc_pt, wCent);
@@ -693,7 +656,7 @@ void unfold_embedding(const char* inputFile,
 
         if (m == "BAYES") {
           cout << "Doing Bayesian unfolding..." << endl;
-          static const int kBayesIters[] = {1, 4, 5, 7};
+          static const int kBayesIters[] = {1, 2, 3, 4, 5, 6, 7, 8};
           static const int kNBayesIters = sizeof(kBayesIters)/sizeof(kBayesIters[0]);
 
 
@@ -723,8 +686,8 @@ void unfold_embedding(const char* inputFile,
           // ========================= PLOTTING (closure) =========================
 
           // Distinct (non-blending) styles for Bayes iterations
-          static const int kUnfCols[4]   = { kRed+1, kAzure+2, kGreen+2, kOrange+7 };
-          static const int kUnfMarks[4]  = { 20, 21, 22, 33 };
+          static const int kUnfCols[8] = {kBlack,kRed+1,kBlue+1,kGreen+2,kCyan+2,kOrange+7,kMagenta+2,kViolet+1};
+          static const int kUnfMarks[8]  = { 20, 21, 22, 33, 24, 25, 26, 27 };
 
           TCanvas* c = new TCanvas(("c_"+tag).c_str(), "", 800, 1000);
 
@@ -779,6 +742,8 @@ void unfold_embedding(const char* inputFile,
           leg->AddEntry(hM_truth, "Measured (test)", "lp");
 
           for (int ib = 0; ib < kNBayesIters; ++ib) {
+            if (!DrawBayesIter(kBayesIters[ib])) continue;
+
             TH1D* w = unfoldedTruth[ib];
             if (!w) continue;
 
@@ -809,6 +774,8 @@ void unfold_embedding(const char* inputFile,
 
           TH1D* firstRatio = 0;
           for (int ib = 0; ib < kNBayesIters; ++ib) {
+            if (!DrawBayesIter(kBayesIters[ib])) continue;
+
             TH1D* hunf_reb = unfoldedTruth[ib];
             if (!hunf_reb) continue;
 
@@ -887,6 +854,189 @@ void unfold_embedding(const char* inputFile,
               if (pos != string::npos) pngPath.replace(pos, 4, ".png");
               c->SaveAs(pngPath.c_str());
             }
+
+
+            // ========================= ITERATION STABILITY PLOT =========================
+
+            TCanvas* cstab = new TCanvas(("c_stability_"+tag).c_str(), "", 800, 1000);
+
+            TPad* pTopS = new TPad(("pTop_stability_"+tag).c_str(), "", 0.0, 0.30, 1.0, 1.0);
+            TPad* pBotS = new TPad(("pBot_stability_"+tag).c_str(), "", 0.0, 0.00, 1.0, 0.30);
+
+            pTopS->SetLeftMargin(0.12);
+            pTopS->SetRightMargin(0.03);
+            pTopS->SetTopMargin(0.05);
+            pTopS->SetBottomMargin(0.02);
+
+            pBotS->SetLeftMargin(0.12);
+            pBotS->SetRightMargin(0.03);
+            pBotS->SetTopMargin(0.02);
+            pBotS->SetBottomMargin(0.30);
+
+            pTopS->Draw();
+            pBotS->Draw();
+
+            // ---------- top: unfolded spectra ----------
+            pTopS->cd();
+            gPad->SetLogy();
+
+            TH1D* frameStab = 0;
+
+            TLegend* legStab = new TLegend(0.55, 0.55, 0.90, 0.90);
+            legStab->SetBorderSize(0);
+            legStab->SetFillStyle(0);
+            legStab->SetTextSize(0.030);
+
+            static const int kStabCols[] = {
+              kBlack, kRed+1, kAzure+2, kGreen+2, kOrange+7,
+              kMagenta+2, kCyan+2, kViolet+1, kGray+2, kBlue+1
+            };
+
+            static const int kStabMarks[] = {
+              20, 21, 22, 23, 33,
+              34, 29, 47, 24, 25
+            };
+
+            for (int ib = 0; ib < kNBayesIters; ++ib) {
+              TH1D* h = unfoldedTruth[ib];
+              if (!h) continue;
+
+              const int col = kStabCols[ib % 10];
+              const int mar = kStabMarks[ib % 10];
+
+              h->SetMarkerStyle(mar);
+              h->SetMarkerColor(col);
+              h->SetLineColor(col);
+
+              h->GetXaxis()->SetLabelSize(0);
+              h->GetXaxis()->SetTitleSize(0);
+              h->GetYaxis()->SetTitle("Unfolded yield");
+              h->GetYaxis()->SetTitleOffset(1.2);
+
+              if (!frameStab) {
+                frameStab = h;
+                frameStab->SetTitle("");
+                frameStab->Draw("E1");
+              } else {
+                h->Draw("E1 SAME");
+              }
+
+              legStab->AddEntry(h, Form("Bayes %d it.", kBayesIters[ib]), "lp");
+            }
+
+            legStab->Draw();
+
+            {
+              TLatex lat;
+              lat.SetNDC(true);
+              lat.SetTextFont(42);
+              lat.SetTextSize(0.040);
+              lat.DrawLatex(0.16, 0.28, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
+              lat.DrawLatex(0.16, 0.22,
+                            Form("#it{R} = %.1f, %s", Rval, NiceCentLabel(C).Data()));
+              lat.DrawLatex(0.16, 0.16,
+                            Form("#it{p}_{T}^{lead} #geq %.0f GeV/#it{c}", cut));
+              lat.DrawLatex(0.16, 0.10, "Bayesian unfolding stability");
+            }
+
+            // ---------- bottom: consecutive iteration ratios ----------
+            pBotS->cd();
+
+            TH1D* firstStabRatio = 0;
+
+            for (int ib = 1; ib < kNBayesIters; ++ib) {
+              TH1D* hNum = unfoldedTruth[ib];
+              TH1D* hDen = unfoldedTruth[ib-1];
+
+              if (!hNum || !hDen) continue;
+
+              TH1D* r = (TH1D*)hNum->Clone(
+                  Form("ratio_iter%d_over_iter%d_%s",
+                      kBayesIters[ib], kBayesIters[ib-1], tag.c_str())
+              );
+
+              r->SetDirectory(0);
+              r->Divide(hDen);
+
+              const int col = kStabCols[ib % 10];
+              const int mar = kStabMarks[ib % 10];
+
+              r->SetMarkerStyle(mar);
+              r->SetMarkerColor(col);
+              r->SetLineColor(col);
+
+              r->SetTitle("");
+              r->GetYaxis()->SetTitle("Iter. ratio");
+              r->GetYaxis()->SetRangeUser(0.8, 1.2);
+
+              r->GetXaxis()->SetTitle("#it{p}_{T}^{truth} (GeV/#it{c})");
+              r->GetXaxis()->SetTitleSize(0.11);
+              r->GetXaxis()->SetLabelSize(0.09);
+              r->GetXaxis()->SetTitleOffset(1.05);
+
+              r->GetYaxis()->SetTitleSize(0.09);
+              r->GetYaxis()->SetLabelSize(0.08);
+              r->GetYaxis()->SetTitleOffset(0.65);
+              r->GetYaxis()->SetNdivisions(505);
+
+              if (!firstStabRatio) {
+                firstStabRatio = r;
+                firstStabRatio->Draw("E1");
+              } else {
+                r->Draw("E1 SAME");
+              }
+
+              r->Write(
+                Form("BayesStabilityRatio_iter%d_over_iter%d",
+                    kBayesIters[ib], kBayesIters[ib-1])
+              );
+            }
+
+            if (firstStabRatio) {
+              const double xmin = firstStabRatio->GetXaxis()->GetXmin();
+              const double xmax = firstStabRatio->GetXaxis()->GetXmax();
+
+              TLine* l1 = new TLine(xmin, 1.00, xmax, 1.00);
+              l1->SetLineColor(kBlack);
+              l1->SetLineStyle(1);
+              l1->Draw();
+
+              TLine* l2 = new TLine(xmin, 1.05, xmax, 1.05);
+              l2->SetLineColor(kGray+1);
+              l2->SetLineStyle(2);
+              l2->Draw();
+
+              TLine* l3 = new TLine(xmin, 0.95, xmax, 0.95);
+              l3->SetLineColor(kGray+1);
+              l3->SetLineStyle(2);
+              l3->Draw();
+
+              TLine* l4 = new TLine(xmin, 1.10, xmax, 1.10);
+              l4->SetLineColor(kGray+2);
+              l4->SetLineStyle(2);
+              l4->Draw();
+
+              TLine* l5 = new TLine(xmin, 0.90, xmax, 0.90);
+              l5->SetLineColor(kGray+2);
+              l5->SetLineStyle(2);
+              l5->Draw();
+            }
+
+            // ---------- save stability plot ----------
+            const string pdfPathStab = string(outDir) + "/BAYES_stability_" + tag + ".pdf";
+
+            d->cd();
+            cstab->SaveAs(pdfPathStab.c_str());
+
+            {
+              string pngPathStab = pdfPathStab;
+              const size_t pos = pngPathStab.rfind(".pdf");
+              if (pos != string::npos) pngPathStab.replace(pos, 4, ".png");
+              cstab->SaveAs(pngPathStab.c_str());
+            }
+
+            delete cstab;
+            delete legStab;
 
             // ---------- cleanup ----------
             delete c;

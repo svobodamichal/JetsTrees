@@ -1,0 +1,19 @@
+Lists are taken from:
+MB:
+https://www.star.bnl.gov/protected/common/common2014/trigger2014/lumiau200GeV/lum_perrun_VPDMB-30.txt
+https://www.star.bnl.gov/protected/common/common2014/trigger2014/lumiau200GeV/nev_perday_unix_VPDMB-30.txt
+
+HT2:
+https://www.star.bnl.gov/protected/common/common2014/trigger2014/lumiau200GeV/lum_perrun_BHT2*VPDMB-30.txt
+https://www.star.bnl.gov/protected/common/common2014/trigger2014/lumiau200GeV/nev_perday_unix_BHT2*VPDMB-30.txt
+
+
+Perday files contain cummulative number of events. Subtraction is done by process_runs.sh.
+
+merge_files.sh merges two files for each trigger and keeps only the info important for the analysis (Run_Number, Number_of_Events, Sampled_Luminosity, Prescale, and Livetime) and also orders the lines before merging, according to the start time
+
+remove_bad_runs.sh removes the lines which contain run number from bad run list
+
+find_missing.sh checks if there are some run numbers in either of the triggers whuch are not in the other cleaned file
+
+And remove the first lines in the cleaned files, which are the headers

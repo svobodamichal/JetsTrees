@@ -1,6 +1,16 @@
 #include "StPicoJetMaker.h"
 
+#include <fstream>
+#include <iostream>
+
 ClassImp(StPicoJetMaker)
+
+namespace {
+const char *kHtPrescaleTable =
+    "/gpfs01/star/pwg/svomich/JetsTrees/analysis/prescales/BHT2VPDMB-30_matched_cleaned.txt";
+const char *kMbPrescaleTable =
+    "/gpfs01/star/pwg/svomich/JetsTrees/analysis/prescales/VPDMB-30_matched_cleaned.txt";
+}
 
     // _________________________________________________________
     // _________________________________________________________
@@ -74,6 +84,8 @@ Int_t StPicoJetMaker::Init() {
   // -- reset event to be in a defined state
   resetEvent();
 
+  precomputeWeights();
+
   return kStOK;
 }
 
@@ -135,6 +147,11 @@ Int_t StPicoJetMaker::Make() {
   }
   Int_t iReturn = kStOK;
 
+  static_cast<TH1I *>(mOutList->FindObject("hevents"))->Fill(1);
+  static_cast<TH1I *>(mOutList->FindObject("hrunId"))->Fill(mPicoDst->event()->runId());
+
+
+
   if (setupEvent()) {
     UInt_t nTracks = mPicoDst->numberOfTracks();
 
@@ -188,7 +205,6 @@ Int_t StPicoJetMaker::Make() {
 
   // -- fill basic event histograms - for all events
   // TODO: Fill all event histograms here - expand for other observables
-  static_cast<TH1I *>(mOutList->FindObject("hevents"))->Fill(1);
   static_cast<TH1I *>(mOutList->FindObject("hrefmult"))
       ->Fill(mPicoDst->event()->refMult());
   static_cast<TH1F *>(mOutList->FindObject("hzvertex"))->Fill(mPrimVtx.z());
@@ -196,8 +212,6 @@ Int_t StPicoJetMaker::Make() {
       ->Fill(mPrimVtx.z() - mPicoDst->event()->vzVpd());
   static_cast<TH2D *>(mOutList->FindObject("hz_refmult"))
       ->Fill(mPrimVtx.z(), mPicoDst->event()->refMult());
-  static_cast<TH1I *>(mOutList->FindObject("hrunId"))
-      ->Fill(mPicoDst->event()->runId());
 
   // -- reset event to be in a defined state
   resetEvent();
@@ -309,4 +323,97 @@ void StPicoJetMaker::fillEventStats(int *aEventStat) {
       break;
     hEventStat1->Fill(idx);
   }
+}
+
+std::map<int, StPicoJetMaker::RunData>
+StPicoJetMaker::readDataFromFile(const std::string &filename) const {
+  std::map<int, RunData> dataMap;
+  std::ifstream file(filename.c_str());
+
+  if (!file.is_open()) {
+    std::cerr << "Warning: Could not open run-weight table " << filename
+              << std::endl;
+    return dataMap;
+  }
+
+  int runNumber = 0;
+  double numberOfEvents = 0.0;
+  double sampledLuminosity = 0.0;
+  double prescale = 0.0;
+  double livetime = 0.0;
+
+  while (file >> runNumber >> numberOfEvents >> sampledLuminosity >> prescale >>
+         livetime) {
+    RunData runData;
+    runData.runNumber = runNumber;
+    runData.numberOfEvents = numberOfEvents;
+    runData.sampledLuminosity = sampledLuminosity;
+    runData.prescale = prescale;
+    runData.livetime = livetime;
+    dataMap[runNumber] = runData;
+  }
+
+  return dataMap;
+}
+
+double StPicoJetMaker::calculateRunEqMbWeight(const RunData &htRunData,
+                                              const RunData &mbRunData) const {
+  if (htRunData.prescale == 0.0 || mbRunData.prescale == 0.0 ||
+      htRunData.livetime == 0.0 || mbRunData.livetime == 0.0 ||
+      htRunData.numberOfEvents == 0.0) {
+    return 0.0;
+  }
+
+  const double ratioPS = mbRunData.prescale / htRunData.prescale;
+  const double ratioLT = htRunData.livetime / mbRunData.livetime;
+  const double ratioNevt = mbRunData.numberOfEvents / htRunData.numberOfEvents;
+
+  return ratioPS * ratioLT * ratioNevt;
+}
+
+void StPicoJetMaker::precomputeWeights() {
+  mRunEqMbWeightMap.clear();
+  mMissingRunWeightWarned.clear();
+
+  const std::map<int, RunData> htRunDataMap =
+      readDataFromFile(kHtPrescaleTable);
+  const std::map<int, RunData> mbRunDataMap =
+      readDataFromFile(kMbPrescaleTable);
+
+  if (htRunDataMap.empty() || mbRunDataMap.empty()) {
+    std::cerr << "Warning: Run-weight tables are empty. Equivalent-MB "
+                 "normalization will be zero."
+              << std::endl;
+    return;
+  }
+
+  std::map<int, RunData>::const_iterator it = htRunDataMap.begin();
+  for (; it != htRunDataMap.end(); ++it) {
+    const int runNumber = it->first;
+    std::map<int, RunData>::const_iterator mbIt = mbRunDataMap.find(runNumber);
+    if (mbIt == mbRunDataMap.end()) {
+      continue;
+    }
+
+    mRunEqMbWeightMap[runNumber] =
+        calculateRunEqMbWeight(it->second, mbIt->second);
+  }
+
+  std::cout << "Loaded " << mRunEqMbWeightMap.size()
+            << " per-run equivalent-MB weights" << std::endl;
+}
+
+double StPicoJetMaker::getRunEqMbWeight(int runId) const {
+  std::map<int, double>::const_iterator it = mRunEqMbWeightMap.find(runId);
+  if (it != mRunEqMbWeightMap.end()) {
+    return it->second;
+  }
+
+  if (!mMissingRunWeightWarned[runId]) {
+    std::cerr << "Warning: Missing equivalent-MB run weight for run " << runId
+              << std::endl;
+    mMissingRunWeightWarned[runId] = true;
+  }
+
+  return 0.0;
 }
