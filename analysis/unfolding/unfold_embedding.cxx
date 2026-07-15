@@ -79,6 +79,10 @@ static const double kXsecWeights[kNPthatBins] =
   {1.616e+0,  1.355e-01, 2.288e-02, 5.524e-03, 2.203e-03,
    3.437e-04, 4.681e-05, 8.532e-06, 2.178e-06, 1.198e-07, 6.939e-09};
 
+static const double kNgenEvents[kNPthatBins] =
+  {1020062, 1529646, 1275275, 1019532, 1019730,
+   1020088, 1019739, 765165, 509510, 305922, 101971};
+
 // reco dummy sentinel (keep real negative jets, reject dummy ~ -999)
 static const double RECO_PTCORR_DUMMY_CUT = -500.0;
 
@@ -442,7 +446,7 @@ void unfold_embedding(const char* inputFile,
 
 
         for (int ip = 0; ip < kNPthatBins; ++ip) {
-        const double xw = kXsecWeights[ip];
+        const double xw = kXsecWeights[ip] / kNgenEvents[ip];
 
         // ---- prior ----
         for (int jb = 1; jb <= nbins_truth; ++jb) {
