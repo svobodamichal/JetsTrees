@@ -14,7 +14,7 @@ BASE="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Singularity image and macro, both in the same dir as this script
 SIF="${SCRIPT_DIR}/roounfold.sif"
-MACRO="${SCRIPT_DIR}/unfold_data.cxx"
+MACRO="${SCRIPT_DIR}/unfold_data_wEff.cxx"
 
 ########################
 # Arguments
@@ -43,7 +43,7 @@ else
 fi
 
 # 3rd arg: RESPONSE ROOT FILE
-RESP_FILE="${3:-${SCRIPT_DIR}/out_embedding_BAYES/responses_embedding.root}"
+RESP_FILE="${3:-${SCRIPT_DIR}/out_embedding_BAYES_wEff_Inc_MCRC1p5/responses_embedding.root}"
 
 # 4th arg: EFFICIENCIES ROOT FILE
 EFF_FILE="${4:-${BASE}/analysis/efficiencies/efficiencies.root}"

@@ -65,7 +65,7 @@ static TString NiceCentLabel(const std::string& centToken)
 static const vector<string> kRadii =
   {"R0.2", "R0.3", "R0.4"};
 
-static const int kFirstPtHatBinToUse = 0;  // ignore pThat bins 0 and 1  
+static const int kFirstPtHatBinToUse = 2;  // ignore pThat bins 0 and 1  
 
 // ---- pThat bins (upper edges) and xsec weights (same order) ----
 static const int kNPthatBins = 11;
@@ -117,7 +117,7 @@ static void EnsureDir(const string& path){
 }
 
 // Main macro: builds closure + full-statistics responses
-void unfold_embedding(const char* inputFile,
+void unfold_embedding_inclusive(const char* inputFile,
                       const char* outDir, const char* method = "BAYES")
 {
   std::string m(method);
@@ -366,55 +366,40 @@ void unfold_embedding(const char* inputFile,
           const bool haveMC = (mc_pt > 0.0);
           const bool haveReco = (reco_pt_corr > RECO_PTCORR_DUMMY_CUT);
 
-          // ----- truth / reco / trigger classification -----
+          // ----- fill prior: only MC-side cuts -----
+          if (haveMC) {
+              hPrior_ptHat[ip]->Fill(mc_pt, wCent);
+          }
 
-            // Truth target: no MC pTlead cut.
-            // pTlead is treated as a reco-side analysis selection.
-            const bool truthOK = haveMC;
+          // ----- reco-side cuts for response & closure -----
+          if (!haveReco) continue;
+          if (reco_neutral_fraction > CUT_NEUTRAL_FRACTION) continue;
 
-            const bool recoQualityOK =
-                haveReco &&
-                reco_neutral_fraction <= CUT_NEUTRAL_FRACTION &&
-                reco_area >= areaMin &&
-                reco_pt_lead >= cut;
+          // reco quality cuts
+          // no trigger requirement here: trigger correction will be external
+          // if (!reco_trigger_match) continue;
+          if (reco_area < areaMin) continue;
 
-            const bool trigOK = reco_trigger_match;
+          // dual ptlead cut (both reco & MC)
+      //    if (!(reco_pt_lead >= cut && mc_pt_lead >= cut)) continue;
+          if (reco_pt_lead < cut) continue;   
 
-            // This is the measured-level object entering triggered data unfolding.
-            const bool measOK = recoQualityOK && trigOK;
+          // ===== full-statistics response (temporary, per pThat, centrality-weighted only) =====
+          hRespFull_ptHat[ip]->Fill(reco_pt_corr, mc_pt, wCent);
+          hMeasFull_ptHat[ip]->Fill(reco_pt_corr, wCent);
+          hTrueFull_ptHat[ip]->Fill(mc_pt,        wCent);
 
-            // Use same random split for all categories of this pair/object.
-            const bool train = (rng.Uniform() > kTestFrac);
-
-            // ===== prior: truth-only, all truth jets =====
-            if (truthOK) {
-            hPrior_ptHat[ip]->Fill(mc_pt, wCent);
+          // ===== closure split: train vs test =====
+          const bool train = (rng.Uniform() > kTestFrac);
+          if (train) {
+            hRespTrain_ptHat[ip]->Fill(reco_pt_corr, mc_pt, wCent);
+            hMeasTrain_ptHat[ip]->Fill(reco_pt_corr, wCent);
+            hTrueTrain_ptHat[ip]->Fill(mc_pt,        wCent);
+            } else {
+              hRespTest_ptHat[ip]->Fill(reco_pt_corr, mc_pt, wCent);
+              hMeasTest_ptHat[ip]->Fill(reco_pt_corr, wCent);
+              hTrueTest_ptHat[ip]->Fill(mc_pt,        wCent);
             }
-
-            // ===== full-statistics truth denominator =====
-            if (truthOK) {
-            hTrueFull_ptHat[ip]->Fill(mc_pt, wCent);
-
-            if (train) hTrueTrain_ptHat[ip]->Fill(mc_pt, wCent);
-            else       hTrueTest_ptHat[ip] ->Fill(mc_pt, wCent);
-            }
-
-            // ===== measured spectrum: includes matched reco and reco fakes =====
-            if (measOK) {
-            hMeasFull_ptHat[ip]->Fill(reco_pt_corr, wCent);
-
-            if (train) hMeasTrain_ptHat[ip]->Fill(reco_pt_corr, wCent);
-            else       hMeasTest_ptHat[ip] ->Fill(reco_pt_corr, wCent);
-            }
-
-            // ===== response matrix: matched visible jets only =====
-            if (truthOK && measOK) {
-            hRespFull_ptHat[ip]->Fill(reco_pt_corr, mc_pt, wCent);
-
-            if (train) hRespTrain_ptHat[ip]->Fill(reco_pt_corr, mc_pt, wCent);
-            else       hRespTest_ptHat[ip] ->Fill(reco_pt_corr, mc_pt, wCent);
-            }
-
         }
         cout << endl;
 
@@ -458,15 +443,6 @@ void unfold_embedding(const char* inputFile,
 
         for (int ip = 0; ip < kNPthatBins; ++ip) {
         const double xw = kXsecWeights[ip];
-
-        bool pthatHasAnyValidTruth = false;
-        for (int jb = 1; jb <= nbins_truth; ++jb) {
-            if (validTruthBin[ip][jb]) {
-                pthatHasAnyValidTruth = true;
-                break;
-            }
-        }
-        if (!pthatHasAnyValidTruth) continue;
 
         // ---- prior ----
         for (int jb = 1; jb <= nbins_truth; ++jb) {
@@ -536,37 +512,60 @@ void unfold_embedding(const char* inputFile,
           }
         }
 
-        // ---- measured full/train/test: merge directly, including fakes ----
+        // ---- measured full/train/test from accepted truth columns only ----
         for (int ix = 1; ix <= nbins_meas; ++ix) {
-        {
+
+          double addFullC = 0.0;
+          double addFullE2 = 0.0;
+
+          double addTrainC = 0.0;
+          double addTrainE2 = 0.0;
+
+          double addTestC = 0.0;
+          double addTestE2 = 0.0;
+
+          for (int jy = 1; jy <= nbins_truth; ++jy) {
+            if (!validTruthBin[ip][jy]) continue;
+
+            const double cFull = xw * hRespFull_ptHat[ip]->GetBinContent(ix, jy);
+            const double eFull = xw * hRespFull_ptHat[ip]->GetBinError(ix, jy);
+
+            addFullC  += cFull;
+            addFullE2 += eFull * eFull;
+
+            const double cTrain = xw * hRespTrain_ptHat[ip]->GetBinContent(ix, jy);
+            const double eTrain = xw * hRespTrain_ptHat[ip]->GetBinError(ix, jy);
+
+            addTrainC  += cTrain;
+            addTrainE2 += eTrain * eTrain;
+
+            const double cTest = xw * hRespTest_ptHat[ip]->GetBinContent(ix, jy);
+            const double eTest = xw * hRespTest_ptHat[ip]->GetBinError(ix, jy);
+
+            addTestC  += cTest;
+            addTestE2 += eTest * eTest;
+          }
+
+          {
             const double oldC = hMeasFull->GetBinContent(ix);
             const double oldE = hMeasFull->GetBinError(ix);
-            const double addC = xw * hMeasFull_ptHat[ip]->GetBinContent(ix);
-            const double addE = xw * hMeasFull_ptHat[ip]->GetBinError(ix);
+            hMeasFull->SetBinContent(ix, oldC + addFullC);
+            hMeasFull->SetBinError(ix, std::sqrt(oldE*oldE + addFullE2));
+          }
 
-            hMeasFull->SetBinContent(ix, oldC + addC);
-            hMeasFull->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
-        }
-
-        {
+          {
             const double oldC = hMeasTrain->GetBinContent(ix);
             const double oldE = hMeasTrain->GetBinError(ix);
-            const double addC = xw * hMeasTrain_ptHat[ip]->GetBinContent(ix);
-            const double addE = xw * hMeasTrain_ptHat[ip]->GetBinError(ix);
+            hMeasTrain->SetBinContent(ix, oldC + addTrainC);
+            hMeasTrain->SetBinError(ix, std::sqrt(oldE*oldE + addTrainE2));
+          }
 
-            hMeasTrain->SetBinContent(ix, oldC + addC);
-            hMeasTrain->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
-        }
-
-        {
+          {
             const double oldC = hMeasTest->GetBinContent(ix);
             const double oldE = hMeasTest->GetBinError(ix);
-            const double addC = xw * hMeasTest_ptHat[ip]->GetBinContent(ix);
-            const double addE = xw * hMeasTest_ptHat[ip]->GetBinError(ix);
-
-            hMeasTest->SetBinContent(ix, oldC + addC);
-            hMeasTest->SetBinError(ix, std::sqrt(oldE*oldE + addE*addE));
-        }
+            hMeasTest->SetBinContent(ix, oldC + addTestC);
+            hMeasTest->SetBinError(ix, std::sqrt(oldE*oldE + addTestE2));
+          }
         }
       }
 
@@ -588,15 +587,6 @@ void unfold_embedding(const char* inputFile,
         cout << "    Integral(Meas  full)  = " << hMeasFull ->Integral(0, -1) << endl;
 
         // --- build responses ---
-
-        cout << "    Truth projection response = "
-            << hRespFull->ProjectionY("_py_tmp")->Integral(0,-1) << endl;
-        cout << "    Truth full               = "
-            << hTrueFull->Integral(0,-1) << endl;
-        cout << "    Meas projection response = "
-            << hRespFull->ProjectionX("_px_tmp")->Integral(0,-1) << endl;
-        cout << "    Meas full                = "
-            << hMeasFull->Integral(0,-1) << endl;
 
         // Full-statistics response: this one you will use for unfolding DATA
         RooUnfoldResponse response_full(hMeasFull, hTrueFull, hRespFull);

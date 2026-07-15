@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default file names (can be overridden via arguments)
-IN_BASENAME="${1:-embedding_merged_NoVeto.root}"
+IN_BASENAME="${1:-embedding_merged_MCReco2p0.root}"
 OUT_BASENAME="${2:-efficiencies.root}"
 
 # Paths relative to the script location

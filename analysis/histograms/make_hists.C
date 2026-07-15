@@ -12,6 +12,8 @@
 #include "TLegend.h"
 #include "TLatex.h"
 #include "TStyle.h"
+#include "TPad.h"
+#include "TLine.h"
 
 #include <iostream>
 #include <string>
@@ -258,6 +260,9 @@ void make_hists(const char *infile  = "embedding_merged.root",
         const int ip = FindPtHatBin((double)xsecWeight);
         if (ip < 0) continue;
 
+        // skip first two pThat bins
+        if (ip < 2) continue;
+
         double wCent = (double)centralityWeight;
 
         // matched condition (embedding matched tree entry)
@@ -341,6 +346,19 @@ void make_hists(const char *infile  = "embedding_merged.root",
         }
       }
 
+      // Convert rebinned spectra from weighted counts per bin
+      // to weighted counts per GeV.
+      for (int it = 0; it < N_LEAD; ++it) {
+        for (int ix = 1; ix <= hSpec[it]->GetNbinsX(); ++ix) {
+          const double bw = hSpec[it]->GetBinWidth(ix);
+          if (bw <= 0.0) continue;
+
+          hSpec[it]->SetBinContent(ix, hSpec[it]->GetBinContent(ix) / bw);
+          hSpec[it]->SetBinError(ix,   hSpec[it]->GetBinError(ix)   / bw);
+        }
+
+        hSpec[it]->GetYaxis()->SetTitle("Weighted counts / GeV");
+      }
 
       // ---------------- write hists ----------------
       outC->cd();
@@ -361,30 +379,49 @@ void make_hists(const char *infile  = "embedding_merged.root",
       centLabel.ReplaceAll("_", "-");
       centLabel += " %";
 
-      // ---------------- make PDF: overlay of all ptlead ----------------
-      
+      // ---------------- make PDF: overlay of all ptlead + ratios to pTlead 0 ----------------
       {
-        TCanvas* cSpec = new TCanvas("cSpec","cSpec",800,700);
-        cSpec->SetLogy();
+        TCanvas* cSpec = new TCanvas("cSpec","cSpec",800,800);
 
-        hSpec[0]->SetTitle("");
-        hSpec[0]->GetXaxis()->SetTitle("#it{p}_{T, reco}^{corr} (GeV/#it{c})");
-        hSpec[0]->GetYaxis()->SetTitle("Weighted counts");
-        hSpec[0]->GetXaxis()->SetRangeUser(-10, 60);
-        hSpec[0]->Draw("E1");
+        TPad* padTop = new TPad("padTop","padTop",0.0,0.30,1.0,1.0);
+        TPad* padBot = new TPad("padBot","padBot",0.0,0.00,1.0,0.30);
 
+        padTop->SetBottomMargin(0.02);
+        padTop->SetLogy();
+
+        padBot->SetTopMargin(0.03);
+        padBot->SetBottomMargin(0.32);
+
+        padTop->Draw();
+        padBot->Draw();
+
+        // styles
         hSpec[0]->SetMarkerStyle(20);
         hSpec[0]->SetLineColor(kBlack);
         hSpec[0]->SetMarkerColor(kBlack);
+
         hSpec[1]->SetMarkerStyle(21);
         hSpec[1]->SetLineColor(kRed+1);
         hSpec[1]->SetMarkerColor(kRed+1);
+
         hSpec[2]->SetMarkerStyle(22);
         hSpec[2]->SetLineColor(kBlue+1);
         hSpec[2]->SetMarkerColor(kBlue+1);
+
         hSpec[3]->SetMarkerStyle(23);
         hSpec[3]->SetLineColor(kGreen+2);
         hSpec[3]->SetMarkerColor(kGreen+2);
+
+        // upper pad: spectra
+        padTop->cd();
+
+        hSpec[0]->SetTitle("");
+        hSpec[0]->GetXaxis()->SetLabelSize(0);
+        hSpec[0]->GetXaxis()->SetTitleSize(0);
+        hSpec[0]->GetXaxis()->SetRangeUser(-10, 60);
+        hSpec[0]->GetYaxis()->SetTitle("Weighted counts / GeV");
+        hSpec[0]->Draw("E1");
+
         hSpec[1]->Draw("E1 SAME");
         hSpec[2]->Draw("E1 SAME");
         hSpec[3]->Draw("E1 SAME");
@@ -393,6 +430,7 @@ void make_hists(const char *infile  = "embedding_merged.root",
         leg->SetBorderSize(0);
         leg->SetFillStyle(0);
         leg->SetTextSize(0.04);
+
         for (int it=0; it<N_LEAD; ++it) {
           leg->AddEntry(hSpec[it],
                         Form("#it{p}_{T}^{lead} #geq %.0f GeV", PTLEAD_THR[it]),
@@ -412,26 +450,85 @@ void make_hists(const char *infile  = "embedding_merged.root",
         tex.DrawLatex(0.32, 0.19, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
         tex.DrawLatex(0.32, 0.13, "THIS THESIS");
 
+        // lower pad: ratios to pTlead >= 0
+        padBot->cd();
+
+        TH1D* hRatio[N_LEAD];
+        for (int it = 0; it < N_LEAD; ++it) {
+          hRatio[it] = (TH1D*)hSpec[it]->Clone(
+            Form("hRatio_ptlead%.0f_over_ptlead0_%s_%s",
+                 PTLEAD_THR[it], rname.c_str(), cname.c_str())
+          );
+          hRatio[it]->Divide(hSpec[0]);
+        }
+
+        hRatio[1]->SetTitle("");
+        hRatio[1]->GetXaxis()->SetTitle("#it{p}_{T, reco}^{corr} (GeV/#it{c})");
+        hRatio[1]->GetYaxis()->SetTitle("ratio to #it{p}_{T}^{lead} #geq 0");
+        hRatio[1]->GetXaxis()->SetRangeUser(-10, 60);
+
+        hRatio[1]->GetYaxis()->SetRangeUser(0.0, 1.25);
+
+        hRatio[1]->GetXaxis()->SetTitleSize(0.11);
+        hRatio[1]->GetXaxis()->SetLabelSize(0.09);
+        hRatio[1]->GetYaxis()->SetTitleSize(0.09);
+        hRatio[1]->GetYaxis()->SetLabelSize(0.08);
+        hRatio[1]->GetYaxis()->SetTitleOffset(0.55);
+        hRatio[1]->GetYaxis()->SetNdivisions(505);
+
+        hRatio[1]->Draw("E1");
+        hRatio[2]->Draw("E1 SAME");
+        hRatio[3]->Draw("E1 SAME");
+
+        TLine* line = new TLine(-10.0, 1.0, 60.0, 1.0);
+        line->SetLineStyle(2);
+        line->Draw("SAME");
+
         TString pdfName;
-        pdfName.Form("%s/spectra_ptlead_embed_%s_%s.pdf", pdfCDir.Data(), rname.c_str(), cname.c_str());
+        pdfName.Form("%s/spectra_ptlead_embed_%s_%s.pdf",
+                     pdfCDir.Data(), rname.c_str(), cname.c_str());
+
         cSpec->SaveAs(pdfName.Data());
+
         TString pngName = pdfName;
         pngName.ReplaceAll(".pdf", ".png");
         cSpec->SaveAs(pngName.Data());
 
+        delete line;
+        for (int it = 0; it < N_LEAD; ++it) delete hRatio[it];
         delete leg;
+        delete padTop;
+        delete padBot;
         delete cSpec;
       }
 
-      // ---------------- make PDF: fine spectra before masking ----------------
+           // ---------------- make PDF: fine spectra before masking ----------------
       {
-        TCanvas* cSpecFine = new TCanvas("cSpecFine","cSpecFine",800,700);
-        cSpecFine->SetLogy();
+        TCanvas* cSpecFine = new TCanvas("cSpecFine","cSpecFine",800,800);
+
+        TPad* padTop = new TPad("padTopFine","padTopFine",0.0,0.30,1.0,1.0);
+        TPad* padBot = new TPad("padBotFine","padBotFine",0.0,0.00,1.0,0.30);
+
+        padTop->SetBottomMargin(0.02);
+        padTop->SetLogy();
+
+        padBot->SetTopMargin(0.03);
+        padBot->SetBottomMargin(0.32);
+
+        padTop->Draw();
+        padBot->Draw();
+
+        // ==========================
+        // Upper pad: spectra
+        // ==========================
+        padTop->cd();
 
         hSpecFine[0]->SetTitle("");
-        hSpecFine[0]->GetXaxis()->SetTitle("#it{p}_{T, reco}^{corr} (GeV/#it{c})");
+        hSpecFine[0]->GetXaxis()->SetLabelSize(0);
+        hSpecFine[0]->GetXaxis()->SetTitleSize(0);
+        hSpecFine[0]->GetXaxis()->SetRangeUser(-10,60);
+
         hSpecFine[0]->GetYaxis()->SetTitle("Weighted counts");
-        hSpecFine[0]->GetXaxis()->SetRangeUser(-10, 60);
 
         hSpecFine[0]->SetMarkerStyle(20);
         hSpecFine[0]->SetLineColor(kBlack);
@@ -454,16 +551,19 @@ void make_hists(const char *infile  = "embedding_merged.root",
         hSpecFine[2]->Draw("E1 SAME");
         hSpecFine[3]->Draw("E1 SAME");
 
-        TLegend* legFine = new TLegend(0.60, 0.68, 0.88, 0.88);
+        TLegend* legFine = new TLegend(0.60,0.68,0.88,0.88);
         legFine->SetBorderSize(0);
         legFine->SetFillStyle(0);
         legFine->SetTextSize(0.04);
 
         for (int it=0; it<N_LEAD; ++it) {
-          legFine->AddEntry(hSpecFine[it],
-                            Form("#it{p}_{T}^{lead} #geq %.0f GeV", PTLEAD_THR[it]),
-                            "lep");
+          legFine->AddEntry(
+            hSpecFine[it],
+            Form("#it{p}_{T}^{lead} #geq %.0f GeV",PTLEAD_THR[it]),
+            "lep"
+          );
         }
+
         legFine->Draw();
 
         TString line1;
@@ -474,21 +574,73 @@ void make_hists(const char *infile  = "embedding_merged.root",
         tex.SetTextFont(42);
         tex.SetTextSize(0.045);
 
-        tex.DrawLatex(0.32, 0.25, line1.Data());
-        tex.DrawLatex(0.32, 0.19, "Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
-        tex.DrawLatex(0.32, 0.13, "Before analysis rebinning / bin removal");
+        tex.DrawLatex(0.32,0.25,line1.Data());
+        tex.DrawLatex(0.32,0.19,"Au+Au  #sqrt{#it{s}_{NN}} = 200 GeV");
+        tex.DrawLatex(0.32,0.13,"Before analysis rebinning / bin removal");
+
+        // ==========================
+        // Lower pad: ratios
+        // ==========================
+        padBot->cd();
+
+        TH1D* hRatioFine[N_LEAD];
+
+        for (int it = 0; it < N_LEAD; ++it) {
+          hRatioFine[it] =
+            (TH1D*)hSpecFine[it]->Clone(
+              Form("hRatioFine_ptlead%.0f_over_ptlead0_%s_%s",
+                   PTLEAD_THR[it],
+                   rname.c_str(),
+                   cname.c_str())
+            );
+
+          hRatioFine[it]->Divide(hSpecFine[0]);
+        }
+
+        hRatioFine[1]->SetTitle("");
+
+        hRatioFine[1]->GetXaxis()->SetTitle("#it{p}_{T,reco}^{corr} (GeV/#it{c})");
+        hRatioFine[1]->GetYaxis()->SetTitle("ratio to p_{T}^{lead}>0");
+
+        hRatioFine[1]->GetXaxis()->SetRangeUser(-10,60);
+        hRatioFine[1]->GetYaxis()->SetRangeUser(0.0,1.25);
+
+        hRatioFine[1]->GetXaxis()->SetTitleSize(0.11);
+        hRatioFine[1]->GetXaxis()->SetLabelSize(0.09);
+
+        hRatioFine[1]->GetYaxis()->SetTitleSize(0.09);
+        hRatioFine[1]->GetYaxis()->SetLabelSize(0.08);
+        hRatioFine[1]->GetYaxis()->SetTitleOffset(0.55);
+        hRatioFine[1]->GetYaxis()->SetNdivisions(505);
+
+        hRatioFine[1]->Draw("E1");
+        hRatioFine[2]->Draw("E1 SAME");
+        hRatioFine[3]->Draw("E1 SAME");
+
+        TLine* lineFine = new TLine(-10.0,1.0,60.0,1.0);
+        lineFine->SetLineStyle(2);
+        lineFine->Draw("SAME");
 
         TString pdfNameFine;
         pdfNameFine.Form("%s/spectra_ptlead_embed_FINE_beforeMask_%s_%s.pdf",
-                        pdfCDir.Data(), rname.c_str(), cname.c_str());
+                         pdfCDir.Data(),
+                         rname.c_str(),
+                         cname.c_str());
 
         cSpecFine->SaveAs(pdfNameFine.Data());
 
         TString pngNameFine = pdfNameFine;
-        pngNameFine.ReplaceAll(".pdf", ".png");
+        pngNameFine.ReplaceAll(".pdf",".png");
         cSpecFine->SaveAs(pngNameFine.Data());
 
+        delete lineFine;
+
+        for (int it = 0; it < N_LEAD; ++it)
+          delete hRatioFine[it];
+
         delete legFine;
+        delete padTop;
+        delete padBot;
         delete cSpecFine;
       }
 

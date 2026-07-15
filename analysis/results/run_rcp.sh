@@ -33,7 +33,7 @@ fi
 OUT_DIR="${2:-${SCRIPT_DIR}/out_rcp}"
 
 # 3rd arg: histogram name in unfolded file
-HNAME="${3:-hUnfoldedTruthBins_matchCorr}"
+HNAME="${3:-hUnfoldedTruthBins_finalInvariant}"
 
 ########################
 # Checks

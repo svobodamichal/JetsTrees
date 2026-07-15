@@ -185,7 +185,7 @@ static void SaveQuickPdf(const TH1D* h, const char* pdf,
 
 void rcp_check(const char* unfoldedFile,
                const char* outDir = "out_rcp",
-               const char* spectrumHistName = "hUnfoldedTruthBins_matchCorr")
+               const char* spectrumHistName = "hUnfoldedTruthBins")
 {
   gStyle->SetOptStat(0);
   TH1::SetDefaultSumw2(kTRUE);
