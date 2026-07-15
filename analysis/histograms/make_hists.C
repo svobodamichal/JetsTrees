@@ -43,6 +43,11 @@ static const double kXsecWeights[kNPthatBins] = {
   3.437e-04, 4.681e-05, 8.532e-06, 2.178e-06, 1.198e-07, 6.939e-09
 };
 
+static const double kNgenEvents[kNPthatBins] = {
+  1020062, 1529646, 1275275, 1019532, 1019730,
+  1020088, 1019739, 765165, 509510, 305922, 101971
+};
+
 static const double kMinSignif = std::sqrt(10.0);
 
 // measured & truth binning used in unfolding
@@ -281,7 +286,7 @@ void make_hists(const char *infile  = "embedding_merged.root",
         // Here we apply xsecWeight immediately because we are not
         // merging per-pThat bins later for these histograms.
         // ---------------------------------------------------------
-        const double wFull = (double)xsecWeight * (double)centralityWeight;
+        const double wFull = (double)xsecWeight / kNgenEvents[ip] * (double)centralityWeight;
 
         for (int it = 0; it < N_LEAD; ++it) {
           if (reco_pt_lead >= (Float_t)PTLEAD_THR[it]) {
@@ -306,7 +311,7 @@ void make_hists(const char *infile  = "embedding_merged.root",
       }
 
       for (int ip = 0; ip < kNPthatBins; ++ip) {
-        const double xw = kXsecWeights[ip];
+        const double xw = kXsecWeights[ip] / kNgenEvents[ip];
 
         for (int ix = 1; ix <= nbins_meas; ++ix) {
           // build mask from inclusive reco spectrum (ptlead >= 0)
