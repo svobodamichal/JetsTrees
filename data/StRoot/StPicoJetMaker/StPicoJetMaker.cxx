@@ -153,7 +153,6 @@ Int_t StPicoJetMaker::Make() {
     static_cast<TH1I *>(mOutList->FindObject("hrunId_trig"))->Fill(mPicoDst->event()->runId());
 
 
-
   if (setupEvent()) {
     UInt_t nTracks = mPicoDst->numberOfTracks();
 

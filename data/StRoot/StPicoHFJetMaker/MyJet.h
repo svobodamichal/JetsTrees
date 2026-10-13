@@ -50,7 +50,11 @@ MyJet(fastjet::PseudoJet jet, float rho)
   pt_corr = pt - area * rho;
 
   vector<fastjet::PseudoJet> constituents = sorted_by_pt(jet.constituents());
-  n_constituents = constituents.size();
+  n_constituents = 0;
+  for (const auto &constituent : constituents) {
+    // FastJet explicit area ghosts retain the default user index of -1.
+    if (constituent.user_index() != -1) ++n_constituents;
+  }
 
   if (n_constituents == 0 || pt <= 0) {
     // mark as invalid jet
