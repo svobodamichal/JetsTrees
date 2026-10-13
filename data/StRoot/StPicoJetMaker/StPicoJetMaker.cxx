@@ -288,7 +288,7 @@ void StPicoJetMaker::initializeEventStats() {
                          refmultmax));
 
   mOutList->Add(new TH1I("hrunId", "runId", 90913, 15076101, 15167014));
-  mOutList->Add(new TH1I("hrunId_trig", "triggered events runId",90913, 15076101, 15167014));
+  mOutList->Add(new TH1I("hrunId_trig", "triggered events runId", 90913, 15076101, 15167014));
 
   // Accepted event histograms
   mOutList->Add(new TH1I("hevents_acc", "number of events", 2, 0, 2));
